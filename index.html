@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chem Study Hub</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/"><span class="logo">⚗</span> Chem Study Hub</a>
+    <nav class="nav" id="nav">
+      <a href="#/" data-nav="">Home</a>
+      <a href="#/chapters" data-nav="chapters">Chapters</a>
+      <a href="#/quiz" data-nav="quiz">Quiz</a>
+      <a href="#/cards" data-nav="cards">Flashcards</a>
+      <a href="#/schedule" data-nav="schedule">Schedule</a>
+      <a href="#/reference" data-nav="reference">Formulas</a>
+      <a href="#/stats" data-nav="stats">Stats</a>
+    </nav>
+    <div class="tools">
+      <form id="search-form" class="search" role="search">
+        <input id="search-input" type="search" placeholder="Search notes…" aria-label="Search notes">
+      </form>
+      <button class="icon-btn" data-act="theme" title="Toggle light/dark" aria-label="Toggle theme">◐</button>
+    </div>
+  </header>
+
+  <main id="app" class="wrap" aria-live="polite"></main>
+
+  <div id="toast" class="toast" role="status"></div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
