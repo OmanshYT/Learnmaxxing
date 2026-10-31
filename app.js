@@ -10,12 +10,14 @@
   const pct = (x) => Math.round(x * 100) + "%";
 
   /* ---------- storage (every access guarded: private mode can throw) ---------- */
-  let S = { q: {}, cards: {}, log: [], sched: {}, settings: {} };
+  let S = { q: {}, cards: {}, log: [], sched: {}, settings: {}, ui: null };
   try {
     S = { ...S, ...JSON.parse(localStorage.getItem(KEY) || "{}") };
   } catch (e) {
     /* storage blocked or corrupt: start fresh */
   }
+  const HUB = window.HubUI || null;
+  if (HUB) S.ui = HUB.normalize(S.ui);
   function save() {
     try {
       localStorage.setItem(KEY, JSON.stringify(S));
@@ -283,6 +285,8 @@
       reference: viewReference,
       stats: viewStats,
       search: viewSearch,
+      upload: viewUpload,
+      settings: viewSettings,
     };
     (views[current.name] || viewHome)();
   }
@@ -304,7 +308,10 @@
     const weakQ = poolFor("weak").length;
     const dueC = CARDS.filter((c) => isCardDue(c.id)).length;
     const ring = overall.mastery == null ? 0 : overall.mastery;
-    app.innerHTML = `
+
+    /* Each dashboard block is a widget the student can move, hide or re-add. */
+    const parts = {
+      countdown: `
       <section class="hero panel">
         <div>
           <p class="eyebrow">${esc(D.course.name)}</p>
@@ -320,15 +327,17 @@
         <div class="ring" style="--p:${Math.round(ring * 100)}">
           <div><b>${overall.mastery == null ? "–" : pct(ring)}</b><span>mastery</span></div>
         </div>
-      </section>
+      </section>`,
 
+      tiles: `
       <section class="tiles">
         <a class="tile" href="#/quiz?due"><b>${dueQ}</b><span>questions due</span></a>
         <a class="tile" href="#/quiz?weak"><b>${weakQ}</b><span>weak spots</span></a>
         <a class="tile" href="#/cards"><b>${dueC}</b><span>cards due</span></a>
         <a class="tile" href="#/stats"><b>${overall.answered}</b><span>of ${overall.total} answered</span></a>
-      </section>
+      </section>`,
 
+      chapters: `
       <section class="grid-cards">
         ${D.chapters.map((c) => {
           const m = masteryOf(chapterIds(c.num));
@@ -339,7 +348,52 @@
             <small>${m.mastery == null ? "Not started" : pct(m.mastery) + " mastery"}</small>
           </a>`;
         }).join("")}
-      </section>`;
+      </section>`,
+
+      uploads: `
+      <section class="panel">
+        <h2>Your uploads</h2>
+        <div id="home-uploads"><p class="muted">Loading…</p></div>
+        <a class="btn ghost" href="#/upload">Upload &amp; study</a>
+      </section>`,
+
+      schedule: (() => {
+        const next = D.schedule
+          .filter((s) => s.date >= today)
+          .sort((a, b) => a.date.localeCompare(b.date))
+          .slice(0, 3);
+        if (!next.length) return "";
+        return `<section class="panel">
+          <h2>Next up</h2>
+          <ul class="plain">${next
+            .map((s) => `<li><b>${fmtDate(s.date)}</b> — ${s.href ? `<a href="${esc(s.href)}">${esc(s.task)}</a>` : esc(s.task)}</li>`)
+            .join("")}</ul>
+          <a class="btn ghost" href="#/schedule">Open schedule</a>
+        </section>`;
+      })(),
+
+      quick: `
+      <section class="panel">
+        <h2>Jump back in</h2>
+        <div class="row">
+          <a class="btn primary" href="#/quiz?due">${dueQ ? `Review ${dueQ} due` : "Start a quiz"}</a>
+          <a class="btn" href="#/upload">Upload notes</a>
+          <a class="btn ghost" href="#/cards">Flashcards</a>
+          <a class="btn ghost" href="#/search">Search notes</a>
+        </div>
+      </section>`,
+
+      photo: S.ui.photo
+        ? `<section class="panel home-photo">
+            <img src="${esc(S.ui.photo)}" alt="${esc(S.ui.photoCaption || "Your picture")}">
+            ${S.ui.photoCaption ? `<p class="muted">${esc(S.ui.photoCaption)}</p>` : ""}
+          </section>`
+        : "",
+    };
+
+    const order = S.ui ? S.ui.widgets : ["countdown", "tiles", "chapters"];
+    app.innerHTML = order.map((id) => parts[id] || "").join("\n");
+    fillHomeUploads();
   }
 
   function viewChapters() {
@@ -700,6 +754,384 @@
     </section>`;
   }
 
+  /* ---------- uploads ---------- */
+  const LIB = window.Library || null;
+  const KIND_LABEL = { pdf: "PDF", docx: "Word", pptx: "Slides", md: "Markdown", text: "Text" };
+  const genCache = new Map();
+  let openMat = null; // material currently open, so re-renders stay instant
+  let deck = null; // { id, cards, i, flipped }
+  let uq = null; // mini quiz { id, items, i, picked, score, done }
+  let upBusy = "";
+
+  const fmtSize = (n) => (!n ? "" : n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
+  const noLib = () => `<section class="panel"><p class="muted">The upload module did not load. Reload the page and try again.</p></section>`;
+
+  function generated(m) {
+    let g = genCache.get(m.id);
+    if (!g) {
+      g = { cards: LIB.makeCards(m.text), quiz: LIB.makeQuiz(m.text), terms: LIB.definitions(m.text) };
+      genCache.set(m.id, g);
+    }
+    return g;
+  }
+
+  function setStatus(msg) {
+    upBusy = msg;
+    const el = $("#up-status");
+    if (!el) return;
+    el.textContent = msg || "Nothing selected yet.";
+    el.classList.toggle("muted", !/…$/.test(msg || ""));
+  }
+
+  function matRow(m) {
+    const g = generated(m);
+    const href = `#/upload/${encodeURIComponent(m.id)}`;
+    return `<div class="panel upitem">
+      <div class="upmain">
+        <span class="badge">${KIND_LABEL[m.kind] || esc(m.kind)}</span>
+        <h3>${esc(m.title)}</h3>
+        <small class="muted">${fmtSize(m.size)}${m.size ? " · " : ""}${g.cards.length} flashcards · ${g.quiz.length} quiz questions · added ${new Date(m.addedAt).toLocaleDateString()}</small>
+      </div>
+      <div class="row wrap-row">
+        <a class="btn ghost" href="${href}?tab=study">Study</a>
+        <a class="btn ghost" href="${href}?tab=cards">Flashcards</a>
+        <a class="btn ghost" href="${href}?tab=quiz">Mini quiz</a>
+        <button class="btn ghost" data-act="up-delete" data-id="${esc(m.id)}">Delete</button>
+      </div>
+    </div>`;
+  }
+
+  async function fillLibrary() {
+    const box = $("#up-list");
+    if (!box || !LIB) return;
+    try {
+      const rows = await LIB.list();
+      if (!box.isConnected) return;
+      box.innerHTML = rows.length
+        ? rows.map(matRow).join("")
+        : `<p class="muted">No uploads yet. Add a file above and it will show up here.</p>`;
+    } catch (e) {
+      box.innerHTML = `<p class="muted">${esc(e.message || "Uploads could not be read in this browser.")}</p>`;
+    }
+  }
+
+  function fillHomeUploads() {
+    const box = $("#home-uploads");
+    if (!box || !LIB) return;
+    LIB.list()
+      .then((rows) => {
+        if (!box.isConnected) return;
+        if (!rows.length) {
+          box.innerHTML = `<p class="muted">Nothing yet. <a href="#/upload">Add your notes</a> and the hub turns them into flashcards and a quiz.</p>`;
+          return;
+        }
+        box.innerHTML = `<div class="uplist">${rows
+          .slice(0, 3)
+          .map((m) => {
+            const g = generated(m);
+            return `<a class="panel upitem" href="#/upload/${encodeURIComponent(m.id)}?tab=cards">
+              <div class="upmain">
+                <span class="badge">${KIND_LABEL[m.kind] || esc(m.kind)}</span>
+                <h3>${esc(m.title)}</h3>
+                <small class="muted">${g.cards.length} flashcards · ${g.quiz.length} quiz questions</small>
+              </div>
+              <span class="btn ghost">Study</span>
+            </a>`;
+          })
+          .join("")}</div>`;
+      })
+      .catch(() => {
+        box.innerHTML = `<p class="muted">Uploads could not be read in this browser.</p>`;
+      });
+  }
+
+  async function addFiles(files) {
+    if (!LIB) return;
+    let added = 0;
+    for (const f of files) {
+      setStatus(`Reading ${f.name}…`);
+      try {
+        const m = await LIB.extract(f);
+        if (!m.text || m.text.trim().length < 40) {
+          throw new Error("No readable text in that file" + (m.kind === "pdf" ? " (a scanned PDF has no text layer — paste the text instead)" : "") + ".");
+        }
+        await LIB.save({ title: m.title, kind: m.kind, size: f.size, text: m.text });
+        added += 1;
+        const s = LIB.summary(m.text);
+        setStatus(`Added ${f.name} — ${s.cards} flashcards, ${s.questions} quiz questions ready.`);
+      } catch (e) {
+        setStatus(`${f.name}: ${e.message || "could not be read"}`);
+      }
+    }
+    if (added) {
+      toast(added === 1 ? "Upload added." : `${added} uploads added.`);
+      fillLibrary();
+    }
+  }
+
+  function viewUpload() {
+    if (current.arg) return viewMaterial();
+    if (!LIB) return void (app.innerHTML = noLib());
+    app.innerHTML = `
+      <header class="page-head">
+        <h1>Upload &amp; study</h1>
+        <p class="sub">Add a PDF, Word document, PowerPoint, Markdown or text file — or paste anything in. It is read in this browser and saved on this device, so your notes never leave your computer.</p>
+      </header>
+      <section class="panel dropzone" id="dropzone">
+        <input id="up-file" type="file" accept="${LIB.ACCEPT}" multiple hidden>
+        <div class="dz-icon">↑</div>
+        <h3>Drop files here</h3>
+        <p class="muted">PDF · Word (.docx) · PowerPoint (.pptx) · Markdown · .txt</p>
+        <div class="row"><button class="btn primary" data-act="up-pick">Choose files</button></div>
+        <p class="dz-status" id="up-status">${esc(upBusy || "Nothing selected yet.")}</p>
+      </section>
+      <details class="panel paste">
+        <summary>How to format notes so the cards are good</summary>
+        <div class="prose">
+          <p><strong>Bold the term, put its definition right after it.</strong> That is the whole convention:</p>
+          <p class="muted">Pasting from Google Docs or Slides keeps the bold, so you can copy a document straight into the box below — no download needed.</p>
+          <pre><code>**Enthalpy** — the heat content of a system at constant pressure.
+**Entropy**: a measure of how many ways a system's energy can be arranged.
+**Ideal gas law** :: PV = nRT, where R is the gas constant.</code></pre>
+          <p>Every bold term becomes a flashcard. The quiz asks about those same terms both ways round — name the term from its definition, then pick the definition that belongs to a term — and adds fill-in-the-blank questions when a term also shows up in a sentence or the notes contain numbers.</p>
+          <p class="muted">Bold inside Word and PowerPoint files is read as bold, so pressing Ctrl/Cmd+B in your document is enough. Notes without bold still work through the “Term — definition” line heuristics, just less reliably.</p>
+        </div>
+      </details>
+      <details class="panel paste">
+        <summary>Or paste text (Google Docs, Slides, anything)</summary>
+        <form id="paste-form">
+          <label>Title<input name="title" placeholder="Week 3 lecture notes" maxlength="80"></label>
+          <label>Content<textarea name="text" rows="8" placeholder="**Enthalpy** — the heat content of a system at constant pressure." required></textarea></label>
+          <div class="row"><button class="btn primary" type="submit">Add to library</button></div>
+        </form>
+      </details>
+      <section>
+        <h2>Your library</h2>
+        <div id="up-list"><p class="muted">Loading…</p></div>
+      </section>`;
+    fillLibrary();
+  }
+
+  function viewMaterial() {
+    const id = current.arg;
+    const tab = current.params.get("tab") || "study";
+    if (!LIB) return void (app.innerHTML = noLib());
+    if (openMat && openMat.id === id) return paintMaterial(openMat, tab);
+    app.innerHTML = `<p class="muted">Loading…</p>`;
+    LIB.get(id)
+      .then((m) => {
+        if (!m) {
+          toast("That upload is no longer in this browser.");
+          return go("#/upload");
+        }
+        if (current.arg === id) paintMaterial(m, tab);
+      })
+      .catch((e) => {
+        app.innerHTML = `<p class="muted">${esc(e.message || "Could not open that upload.")}</p>`;
+      });
+  }
+
+  function paintMaterial(m, tab) {
+    openMat = m;
+    const g = generated(m);
+    const href = `#/upload/${encodeURIComponent(m.id)}`;
+    const tabs = [
+      ["study", "Study"],
+      ["cards", `Flashcards (${g.cards.length})`],
+      ["quiz", `Mini quiz (${Math.min(10, g.quiz.length)})`],
+      ["terms", `Key terms (${g.terms.length})`],
+    ];
+    app.innerHTML = `
+      <p class="crumbs"><a href="#/upload">Upload &amp; study</a> / ${KIND_LABEL[m.kind] || "Text"}</p>
+      <header class="page-head">
+        <h1>${esc(m.title)}</h1>
+        <p class="sub">${fmtSize(m.size)}${m.size ? " · " : ""}added ${new Date(m.addedAt).toLocaleDateString()} · ${g.cards.length} flashcards · ${g.quiz.length} quiz questions</p>
+      </header>
+      <nav class="tabs">${tabs
+        .map(([k, label]) => `<a class="${k === tab ? "on" : ""}" href="${href}?tab=${k}">${label}</a>`)
+        .join("")}</nav>
+      <div class="row wrap-row">
+        <button class="btn ghost" data-act="up-export" data-id="${esc(m.id)}">Download text</button>
+        <button class="btn ghost" data-act="up-delete" data-id="${esc(m.id)}">Delete</button>
+      </div>
+      ${tab === "cards" ? cardsBody(m, g) : tab === "quiz" ? quizBody(m, g) : tab === "terms" ? termsBody(g) : `<article class="panel prose">${LIB.toHtml(m.text, m.kind)}</article>`}
+    `;
+  }
+
+  function cardsBody(m, g) {
+    if (!g.cards.length) {
+      return `<section class="panel"><h2>No flashcards yet</h2><p class="muted">Cards are built from definition-style lines such as “Equilibrium — the point where the forward and reverse rates match” or “Equilibrium :: the point where…”, plus fill-in-the-blank sentences. Add a few lines like that to the source and they appear here.</p></section>`;
+    }
+    if (!deck || deck.id !== m.id) deck = { id: m.id, cards: g.cards.slice(), i: 0, flipped: false };
+    const c = deck.cards[deck.i];
+    return `<section class="session">
+      <div class="sess-top"><span class="muted">Card ${deck.i + 1} of ${deck.cards.length}</span>
+        <button class="link" data-act="deck-shuffle">Shuffle</button></div>
+      ${bar((deck.i + (deck.flipped ? 1 : 0)) / deck.cards.length)}
+      <article class="panel flashcard${deck.flipped ? " flipped" : ""}" data-act="deck-flip">
+        <span class="label">${deck.flipped ? "Answer" : "Question (click or press space)"}</span>
+        <h2>${esc(deck.flipped ? c.a : c.q)}</h2>
+      </article>
+      <div class="actions">
+        <button class="btn ghost" data-act="deck-prev"${deck.i === 0 ? " disabled" : ""}>← Previous</button>
+        <button class="btn primary" data-act="deck-next"${deck.i === deck.cards.length - 1 ? " disabled" : ""}>Next →</button>
+      </div>
+    </section>`;
+  }
+
+  function quizBody(m, g) {
+    if (!g.quiz.length) {
+      return `<section class="panel"><h2>No quiz questions yet</h2><p class="muted">Mini quizzes need at least four terms in the source, so the wrong answers can come from your own material. Add more definition-style lines and try again.</p></section>`;
+    }
+    if (!uq || uq.id !== m.id) uq = { id: m.id, items: g.quiz.slice(0, 10), i: 0, picked: null, score: 0, done: false, log: [] };
+    if (uq.done) {
+      const missed = (uq.log || []).filter((r) => !r.ok);
+      return `<section class="results panel">
+        <h1>${uq.score} / ${uq.items.length}</h1>
+        <p class="sub">${pct(uq.score / uq.items.length)} correct on this mini quiz.</p>
+        ${missed.length
+          ? `<h3>Worth another look</h3><ul class="plain">${missed
+              .map((r) => `<li>${esc(r.stem)}<br><span class="muted">${esc(r.right)}</span></li>`)
+              .join("")}</ul>`
+          : `<p class="muted">Every question correct — try the flashcards to lock it in.</p>`}
+        <div class="row">
+          <button class="btn primary" data-act="up-retry">Try again</button>
+          <a class="btn ghost" href="#/upload/${encodeURIComponent(m.id)}?tab=cards">Flashcards</a>
+        </div>
+      </section>`;
+    }
+    const q = uq.items[uq.i];
+    const picked = uq.picked;
+    const right = q.options[q.answer];
+    return `<section class="session">
+      <div class="sess-top"><span class="muted">Question ${uq.i + 1} of ${uq.items.length}</span><span class="muted">Score ${uq.score}</span></div>
+      ${bar(uq.i / uq.items.length)}
+      <article class="panel qcard">
+        ${q.type ? `<span class="badge">${esc(q.type)}</span>` : ""}
+        <p class="qtext">${esc(q.q).replace(/\n\n/g, "<br><br>")}</p>
+        <div class="opts">${q.options
+          .map(
+            (o, i) =>
+              `<button class="opt${picked == null ? "" : i === q.answer ? " right" : i === picked ? " wrong" : ""}" data-act="up-answer" data-n="${i}"${picked == null ? "" : " disabled"}><span class="ol">${"ABCD"[i]}</span><span>${esc(o)}</span></button>`
+          )
+          .join("")}</div>
+      </article>
+      ${picked == null
+        ? `<p class="keys">Pick an answer.</p>`
+        : `<p class="keys">${q.explain ? esc(q.explain) : `Correct answer: ${esc(right)}`}</p>
+           <div class="actions"><button class="btn primary" data-act="up-next">${uq.i + 1 === uq.items.length ? "See result" : "Next question"}</button></div>`}
+    </section>`;
+  }
+
+  function termsBody(g) {
+    if (!g.terms.length) {
+      return `<section class="panel"><h2>No key terms found</h2><p class="muted">Terms come from lines shaped like “Term — definition” or “Term: definition”.</p></section>`;
+    }
+    return `<section class="panel"><h2>Key terms (${g.terms.length})</h2>
+      <div class="table-wrap"><table class="tbl"><thead><tr><th>Term</th><th>Definition</th></tr></thead><tbody>
+        ${g.terms.map((d) => `<tr><td><b>${esc(d.term)}</b></td><td>${esc(d.def)}</td></tr>`).join("")}
+      </tbody></table></div></section>`;
+  }
+
+  /* ---------- look & layout ---------- */
+  const applyLook = () => HUB && HUB.applyTheme(S.ui);
+
+  function renderNav() {
+    const nav = document.getElementById("nav");
+    if (!nav || !HUB) return;
+    nav.innerHTML = S.ui.tabs
+      .map((id) => HUB.tabById(id))
+      .filter(Boolean)
+      .map((t) => `<a href="${t.href}" data-nav="${t.id === "home" ? "" : t.id}" draggable="true">${esc(t.label)}</a>`)
+      .join("");
+    // rebuilding the bar loses the active highlight, so put it back
+    const here = ["chapter", "part"].includes(current.name) ? "chapters" : current.name === "review" ? "cards" : current.name === "session" ? "quiz" : current.name;
+    nav.querySelectorAll("a").forEach((a) => a.classList.toggle("active", a.dataset.nav === here));
+  }
+
+  function saveUI() {
+    if (HUB) S.ui = HUB.normalize(S.ui);
+    save();
+    renderNav();
+    applyLook();
+    paint();
+  }
+
+  const tabRow = (t, i, n) => `<div class="tabrow">
+      <span class="grow"><b>${esc(t.label)}</b>${t.locked ? ' <small class="muted">always shown</small>' : ""}</span>
+      <button class="mini" data-act="ui-tab-up" data-id="${t.id}" title="Move earlier"${i === 0 ? " disabled" : ""}>↑</button>
+      <button class="mini" data-act="ui-tab-down" data-id="${t.id}" title="Move later"${i === n - 1 ? " disabled" : ""}>↓</button>
+      ${t.locked ? "" : `<button class="mini" data-act="ui-tab-hide" data-id="${t.id}" title="Hide this tab">✕</button>`}
+    </div>`;
+
+  const widgetRow = (w, i, n) => `<div class="tabrow">
+      <span class="grow"><b>${esc(w.label)}</b>${w.locked ? ' <small class="muted">always shown</small>' : ""}</span>
+      <button class="mini" data-act="ui-widget-up" data-id="${w.id}" title="Move up"${i === 0 ? " disabled" : ""}>↑</button>
+      <button class="mini" data-act="ui-widget-down" data-id="${w.id}" title="Move down"${i === n - 1 ? " disabled" : ""}>↓</button>
+      ${w.locked ? "" : `<button class="mini" data-act="ui-widget-hide" data-id="${w.id}" title="Hide this widget">✕</button>`}
+    </div>`;
+
+  function viewSettings() {
+    if (!HUB) return void (app.innerHTML = `<section class="panel"><p class="muted">The layout module did not load. Reload the page and try again.</p></section>`);
+    const ui = S.ui;
+    const hiddenTabs = ui.hidden.map((id) => HUB.tabById(id)).filter(Boolean);
+    const hiddenWidgets = ui.hiddenWidgets.map((id) => HUB.widgetById(id)).filter(Boolean);
+    app.innerHTML = `
+      <header class="page-head">
+        <h1>Look &amp; layout</h1>
+        <p class="sub">Move or hide tabs, choose what your home screen shows, and pick your colours and font. Everything here is saved on this device.</p>
+      </header>
+
+      <section class="panel">
+        <h2>Colour palette</h2>
+        <div class="swatches">${HUB.PALETTES.map((p) => `<button class="swatch-check${p.id === ui.palette ? " on" : ""}" data-act="ui-palette" data-id="${p.id}" aria-pressed="${p.id === ui.palette}"><span class="sw" style="background:linear-gradient(135deg, ${p.swatch[0]}, ${p.swatch[1]})"></span><span>${esc(p.label)}</span></button>`).join("")}</div>
+        <p class="muted">Dark mode works with every palette — the ◐ button in the top bar switches it.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Font</h2>
+        <div class="fonts">${HUB.FONTS.map((f) => `<button class="font-check${f.id === ui.font ? " on" : ""}" data-act="ui-font" data-id="${f.id}"><b style="font-family:${f.stack.replace(/"/g, "&quot;")}">Aa</b><span>${esc(f.label)}</span></button>`).join("")}</div>
+        <p class="muted">System and Georgia need no download; the other families load from Google Fonts the first time you pick them.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Tabs</h2>
+        <p class="muted">Drag tabs in the top bar to reorder, or use the arrows here. Hidden tabs can come back at any time.</p>
+        <div class="tablist">${ui.tabs.map((id, i) => tabRow(HUB.tabById(id), i, ui.tabs.length)).join("")}</div>
+        ${hiddenTabs.length ? `<h3>Hidden tabs</h3><div class="tablist">${hiddenTabs.map((t) => `<div class="tabrow hidden-row"><span class="grow">${esc(t.label)}</span><button class="mini" data-act="ui-tab-show" data-id="${t.id}" title="Show again">+</button></div>`).join("")}</div>` : ""}
+      </section>
+
+      <section class="panel">
+        <h2>Home dashboard</h2>
+        <p class="muted">Pick what the home screen shows and in which order.</p>
+        <div class="tablist">${ui.widgets.map((id, i) => widgetRow(HUB.widgetById(id), i, ui.widgets.length)).join("")}</div>
+        ${hiddenWidgets.length ? `<h3>Hidden widgets</h3><div class="tablist">${hiddenWidgets.map((w) => `<div class="tabrow hidden-row"><span class="grow">${esc(w.label)}</span><button class="mini" data-act="ui-widget-show" data-id="${w.id}" title="Show again">+</button></div>`).join("")}</div>` : ""}
+      </section>
+
+      <section class="panel">
+        <h2>Picture &amp; quote</h2>
+        <p class="muted">A screenshot of a formula sheet, a photo of your notes, or something to keep you going. It is shrunk and kept on this device.</p>
+        <input id="ui-photo" type="file" accept="image/*" hidden>
+        <div class="row">
+          <button class="btn" data-act="ui-photo-pick">Choose picture</button>
+          ${ui.photo ? `<button class="btn ghost" data-act="ui-photo-clear">Remove picture</button>` : ""}
+        </div>
+        ${ui.photo ? `<img class="photo-preview" src="${esc(ui.photo)}" alt="Your dashboard picture">` : ""}
+        <form id="photo-form" class="settings-form">
+          <label>Caption or quote
+            <input name="caption" maxlength="160" value="${esc(ui.photoCaption)}" placeholder="Everything is figureoutable">
+          </label>
+          <div class="row"><button class="btn primary" type="submit">Save caption</button></div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Start over</h2>
+        <p class="muted">Puts the default tabs, dashboard, palette and font back. Your study progress and uploads are not touched.</p>
+        <div class="row"><button class="btn ghost" data-act="ui-reset">Reset look &amp; layout</button></div>
+      </section>`;
+  }
+
   /* ---------- schedule, reference, stats, search ---------- */
   function viewSchedule() {
     const today = todayIso();
@@ -944,6 +1376,84 @@
     "cards-start"() {
       startCards();
     },
+    "up-pick"() {
+      const el = $("#up-file");
+      if (el) el.click();
+    },
+    "up-delete"(el) {
+      const id = el.dataset.id;
+      if (!confirm("Delete this upload from this browser?")) return;
+      LIB.remove(id)
+        .then(() => {
+          genCache.delete(id);
+          if (openMat && openMat.id === id) openMat = null;
+          if (deck && deck.id === id) deck = null;
+          if (uq && uq.id === id) uq = null;
+          toast("Upload deleted.");
+          if (current.arg === id) go("#/upload");
+          else {
+            fillLibrary();
+            paint();
+          }
+        })
+        .catch(() => toast("That upload could not be deleted."));
+    },
+    "up-export"(el) {
+      if (!openMat || openMat.id !== el.dataset.id) return;
+      const blob = new Blob([`# ${openMat.title}\n\n${openMat.text}\n`], { type: "text/markdown" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = (openMat.title || "upload").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + ".md";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    },
+    "deck-flip"() {
+      if (!deck) return;
+      deck.flipped = !deck.flipped;
+      paint();
+    },
+    "deck-next"() {
+      if (!deck) return;
+      deck.i = Math.min(deck.cards.length - 1, deck.i + 1);
+      deck.flipped = false;
+      paint();
+    },
+    "deck-prev"() {
+      if (!deck) return;
+      deck.i = Math.max(0, deck.i - 1);
+      deck.flipped = false;
+      paint();
+    },
+    "deck-shuffle"() {
+      if (!deck) return;
+      for (let i = deck.cards.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [deck.cards[i], deck.cards[j]] = [deck.cards[j], deck.cards[i]];
+      }
+      deck.i = 0;
+      deck.flipped = false;
+      paint();
+    },
+    "up-answer"(el) {
+      if (!uq || uq.picked != null) return;
+      const q = uq.items[uq.i];
+      uq.picked = Number(el.dataset.n);
+      const ok = uq.picked === q.answer;
+      if (ok) uq.score += 1;
+      (uq.log || (uq.log = [])).push({ ok, stem: q.q.split("\n\n").pop(), right: q.options[q.answer] });
+      paint();
+    },
+    "up-next"() {
+      if (!uq) return;
+      uq.picked = null;
+      if (uq.i + 1 >= uq.items.length) uq.done = true;
+      else uq.i += 1;
+      paint();
+    },
+    "up-retry"() {
+      uq = null;
+      paint();
+    },
     flip() {
       sess.flipped = !sess.flipped;
       paint();
@@ -972,10 +1482,75 @@
     },
     reset() {
       if (!confirm("Erase all progress in this browser? This cannot be undone.")) return;
-      S = { q: {}, cards: {}, log: [], sched: {}, settings: S.settings };
+      S = { q: {}, cards: {}, log: [], sched: {}, settings: S.settings, ui: S.ui };
       save();
       toast("Progress reset.");
       paint();
+    },
+    "ui-palette"(el) {
+      S.ui.palette = el.dataset.id;
+      saveUI();
+    },
+    "ui-font"(el) {
+      S.ui.font = el.dataset.id;
+      saveUI();
+    },
+    "ui-tab-up"(el) {
+      S.ui.tabs = HUB.moveItem(S.ui.tabs, el.dataset.id, -1);
+      saveUI();
+    },
+    "ui-tab-down"(el) {
+      S.ui.tabs = HUB.moveItem(S.ui.tabs, el.dataset.id, 1);
+      saveUI();
+    },
+    "ui-tab-hide"(el) {
+      const id = el.dataset.id;
+      if ((HUB.tabById(id) || {}).locked) return;
+      S.ui.tabs = S.ui.tabs.filter((x) => x !== id);
+      if (!S.ui.hidden.includes(id)) S.ui.hidden.push(id);
+      saveUI();
+      toast("Tab hidden. Bring it back under Look & layout.");
+    },
+    "ui-tab-show"(el) {
+      const id = el.dataset.id;
+      S.ui.hidden = S.ui.hidden.filter((x) => x !== id);
+      if (!S.ui.tabs.includes(id)) S.ui.tabs.push(id);
+      saveUI();
+    },
+    "ui-widget-up"(el) {
+      S.ui.widgets = HUB.moveItem(S.ui.widgets, el.dataset.id, -1);
+      saveUI();
+    },
+    "ui-widget-down"(el) {
+      S.ui.widgets = HUB.moveItem(S.ui.widgets, el.dataset.id, 1);
+      saveUI();
+    },
+    "ui-widget-hide"(el) {
+      const id = el.dataset.id;
+      if ((HUB.widgetById(id) || {}).locked) return;
+      S.ui.widgets = S.ui.widgets.filter((x) => x !== id);
+      if (!S.ui.hiddenWidgets.includes(id)) S.ui.hiddenWidgets.push(id);
+      saveUI();
+    },
+    "ui-widget-show"(el) {
+      const id = el.dataset.id;
+      S.ui.hiddenWidgets = S.ui.hiddenWidgets.filter((x) => x !== id);
+      if (!S.ui.widgets.includes(id)) S.ui.widgets.push(id);
+      saveUI();
+    },
+    "ui-photo-pick"() {
+      const el = $("#ui-photo");
+      if (el) el.click();
+    },
+    "ui-photo-clear"() {
+      S.ui.photo = "";
+      saveUI();
+      toast("Picture removed.");
+    },
+    "ui-reset"() {
+      S.ui = HUB.normalize(null);
+      saveUI();
+      toast("Look & layout reset.");
     },
   };
 
@@ -996,6 +1571,77 @@
     }
   });
 
+  document.addEventListener("dragover", (e) => {
+    const dz = e.target.closest && e.target.closest("#dropzone");
+    if (!dz) return;
+    e.preventDefault();
+    dz.classList.add("over");
+  });
+
+  document.addEventListener("dragleave", (e) => {
+    const dz = e.target.closest && e.target.closest("#dropzone");
+    if (dz) dz.classList.remove("over");
+  });
+
+  document.addEventListener("drop", (e) => {
+    const dz = e.target.closest && e.target.closest("#dropzone");
+    if (!dz) return;
+    e.preventDefault();
+    dz.classList.remove("over");
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) addFiles([...e.dataTransfer.files]);
+  });
+
+  /* Pasting from Google Docs keeps the bold, so **term** markup survives the trip. */
+  document.addEventListener("paste", (e) => {
+    const ta = e.target;
+    if (!ta || ta.tagName !== "TEXTAREA" || !ta.closest("#paste-form") || !LIB) return;
+    const html = e.clipboardData && e.clipboardData.getData("text/html");
+    if (!html) return;
+    const text = LIB.fromHtmlPaste(html);
+    if (!text || text.length < 2) return;
+    e.preventDefault();
+    const start = typeof ta.selectionStart === "number" ? ta.selectionStart : ta.value.length;
+    const end = typeof ta.selectionEnd === "number" ? ta.selectionEnd : start;
+    ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
+    ta.selectionStart = ta.selectionEnd = start + text.length;
+  });
+
+  /* dragging tabs in the top bar reorders them */
+  let dragTab = "";
+  document.addEventListener("dragstart", (e) => {
+    const a = e.target.closest && e.target.closest(".nav a[data-nav]");
+    if (!a) return;
+    dragTab = a.dataset.nav || "home";
+    a.classList.add("dragging");
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      try {
+        e.dataTransfer.setData("text/plain", dragTab);
+      } catch (err) {
+        /* some browsers keep data private; the in-memory id is enough */
+      }
+    }
+  });
+
+  document.addEventListener("dragend", () => {
+    dragTab = "";
+    document.querySelectorAll(".nav a.dragging").forEach((a) => a.classList.remove("dragging"));
+  });
+
+  document.addEventListener("drop", (e) => {
+    const a = e.target.closest && e.target.closest(".nav a[data-nav]");
+    if (!dragTab || !a) return;
+    e.preventDefault();
+    const toId = a.dataset.nav || "home";
+    const from = S.ui.tabs.indexOf(dragTab);
+    const to = S.ui.tabs.indexOf(toId);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = S.ui.tabs.slice();
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    S.ui.tabs = next;
+    saveUI();
+  });
+
   document.addEventListener("change", (e) => {
     const t = e.target;
     if (t.matches('[data-act="sched"]')) {
@@ -1010,6 +1656,9 @@
         try {
           const data = JSON.parse(reader.result);
           S = { q: {}, cards: {}, log: [], sched: {}, settings: {}, ...data };
+          if (HUB) S.ui = HUB.normalize(S.ui);
+          renderNav();
+          applyLook();
           save();
           toast("Progress imported.");
           paint();
@@ -1018,6 +1667,24 @@
         }
       };
       reader.readAsText(t.files[0]);
+    }
+    if (t.id === "up-file" && t.files && t.files.length) {
+      const files = [...t.files];
+      t.value = "";
+      addFiles(files);
+    }
+    if (t.id === "ui-photo" && t.files && t.files[0]) {
+      const file = t.files[0];
+      t.value = "";
+      HUB.photoFromFile(file)
+        .then((data) => {
+          S.ui.photo = data;
+          S.ui.hiddenWidgets = S.ui.hiddenWidgets.filter((x) => x !== "photo");
+          if (!S.ui.widgets.includes("photo")) S.ui.widgets.push("photo");
+          saveUI();
+          toast("Picture saved to your dashboard.");
+        })
+        .catch((err) => toast(err.message || "That picture could not be saved."));
     }
   });
 
@@ -1035,6 +1702,28 @@
       const label = e.target.querySelector('[name="source"] option:checked').textContent;
       if (exam) return startExam(ids, minutes, "Exam", count);
       startSession({ ids, title: label, shuffleIt: fd.get("order") === "shuffle", count });
+    }
+    if (e.target.id === "photo-form") {
+      e.preventDefault();
+      S.ui.photoCaption = String(new FormData(e.target).get("caption") || "").trim().slice(0, 160);
+      saveUI();
+      toast("Caption saved.");
+      return;
+    }
+    if (e.target.id === "paste-form") {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const text = String(fd.get("text") || "").trim();
+      if (text.length < 40) return toast("Paste a bit more text first.");
+      const title = String(fd.get("title") || "").trim() || text.split(/\r?\n/)[0].slice(0, 60);
+      LIB.save({ title, kind: "text", text })
+        .then(() => {
+          e.target.reset();
+          toast("Added to your library.");
+          fillLibrary();
+        })
+        .catch((err) => toast(err.message || "Could not save that text."));
+      return;
     }
     if (e.target.id === "search-form") {
       e.preventDefault();
@@ -1076,6 +1765,8 @@
 
   /* ---------- boot ---------- */
   if (S.settings.theme) document.documentElement.dataset.theme = S.settings.theme;
+  renderNav();
+  applyLook();
   const sForm = document.getElementById("search-form");
   if (sForm) sForm.setAttribute("autocomplete", "off");
   window.addEventListener("hashchange", route);
