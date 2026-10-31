@@ -18,6 +18,17 @@ Uploads, study progress and layout choices live in the browser, not in Git.
 They are stored under the key `chem-study-hub.v1`; clearing site data wipes
 them, and **Stats → Export** backs up the study progress.
 
+## 2026-10-31 — AGENTS.md working notes
+
+New file `AGENTS.md`: what the project is, how to run it, the file map, the
+bold-term upload contract, the quiz design, the layout model, where state lives,
+the gotchas that cost time (em dashes in regex classes, trimming run-boundary
+spaces), and how changes were verified. It exists so a fresh chat does not
+re-derive all of that, and so the change-log rule is stated up front.
+
+Revert by deleting the file; nothing imports or reads it. It is guidance for
+agents, not part of the site.
+
 ## 2026-10-31 — long quiz answers wrap
 
 `styles.css` only, quiz option styling; revert with `git checkout -- styles.css`.
