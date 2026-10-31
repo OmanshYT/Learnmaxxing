@@ -282,12 +282,14 @@ textarea:focus, select:focus, input:focus { outline: 2px solid var(--accent); ou
 .qcard { margin-top: .9rem; }
 .qmeta { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem; margin-bottom: .6rem; }
 .qtext { font-size: 1.2rem; line-height: 1.5; margin: .2rem 0 1rem; font-weight: 600; }
-.opts { display: grid; gap: .55rem; }
+.opts { display: grid; grid-template-columns: minmax(0, 1fr); gap: .55rem; }
 .opt {
   display: flex; gap: .7rem; align-items: flex-start; text-align: left; width: 100%;
   padding: .8rem .95rem; border-radius: 12px; border: 1px solid var(--line);
   background: var(--surface-2); color: var(--text); cursor: pointer; font-size: 1rem;
+  min-width: 0; line-height: 1.45; white-space: normal; overflow-wrap: anywhere;
 }
+.opt > span:not(.ol) { flex: 1 1 auto; min-width: 0; }
 .opt:hover:not(:disabled) { border-color: var(--accent); }
 .opt:disabled { cursor: default; }
 .opt .ol {

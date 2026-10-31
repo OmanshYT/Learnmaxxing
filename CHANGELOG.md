@@ -18,6 +18,17 @@ Uploads, study progress and layout choices live in the browser, not in Git.
 They are stored under the key `chem-study-hub.v1`; clearing site data wipes
 them, and **Stats → Export** backs up the study progress.
 
+## 2026-10-31 — long quiz answers wrap
+
+`styles.css` only, quiz option styling; revert with `git checkout -- styles.css`.
+
+`.opt` is a flex row, and its text `<span>` kept `min-width: auto`, so a long
+definition pushed the grid column past the card and spilled off the panel edge.
+The column is now `minmax(0, 1fr)`, the text span is `flex: 1 1 auto; min-width: 0`,
+and options opt into `white-space: normal; overflow-wrap: anywhere; line-height: 1.45`
+so unbroken chemical strings wrap instead of clipping. Both the session quiz and
+the upload mini-quiz use `.opt`, so one rule covers both.
+
 ## 2026-10-31 — bold-term glossary, term-driven quiz, modular layout
 
 Commit `b7e166e`. `git revert b7e166e` undoes this whole batch.
