@@ -302,6 +302,9 @@
 
   /* ---------- router ---------- */
   let current = { name: "", arg: "", params: new URLSearchParams() };
+  /* Edit mode: a per-visit switch that reveals remove buttons on the dashboard.
+     Deliberately not saved, so the site never opens in a half-edited state. */
+  let editing = false;
   function go(hash) {
     if (location.hash === hash) route();
     else location.hash = hash;
@@ -345,6 +348,13 @@
     };
     (views[current.name] || viewHome)();
     persistSess();
+    syncEdit();
+  }
+
+  function syncEdit() {
+    document.body.classList.toggle("editing", !!editing);
+    const btn = document.querySelector('[data-act="edit-toggle"]');
+    if (btn) btn.setAttribute("aria-pressed", String(!!editing));
   }
 
   const bar = (p) => `<div class="bar"><span style="width:${Math.round((p || 0) * 100)}%"></span></div>`;
@@ -444,11 +454,43 @@
             <img src="${esc(S.ui.photo)}" alt="${esc(S.ui.photoCaption || "Your picture")}">
             ${S.ui.photoCaption ? `<p class="muted">${esc(S.ui.photoCaption)}</p>` : ""}
           </section>`
-        : "",
+        : editing
+          ? `<section class="panel"><p class="muted">No picture yet. <a href="#/settings">Choose one under Look &amp; layout</a>.</p></section>`
+          : "",
     };
 
     const order = S.ui ? S.ui.widgets : ["countdown", "tiles", "chapters"];
-    app.innerHTML = order.map((id) => parts[id] || "").join("\n");
+    const missing = HUB && S.ui ? S.ui.hiddenWidgets.map((id) => HUB.widgetById(id)).filter(Boolean) : [];
+
+    /* Edit mode: a bar to add windows back, and a remove button on each one. */
+    const editBar = !editing
+      ? ""
+      : `<section class="panel edit-bar">
+          <h2>Editing home</h2>
+          <p class="muted">Remove a window with its ✕. Add one back below. Order and tabs live under Look &amp; layout.</p>
+          <div class="row">
+            <button class="btn primary" data-act="edit-toggle">Done</button>
+            <a class="btn ghost" href="#/settings">Order &amp; more</a>
+          </div>
+          ${missing.length
+            ? `<div class="edit-add"><span class="label">Add back</span><div class="chips">${missing
+                .map((w) => `<button class="chip" data-act="ui-widget-show" data-id="${w.id}">+ ${esc(w.label)}</button>`)
+                .join("")}</div></div>`
+            : `<p class="muted">Every window is on the page.</p>`}
+        </section>`;
+
+    const body = order.map((id) => {
+      const html = parts[id] || "";
+      if (!editing || !html) return html;
+      const w = HUB ? HUB.widgetById(id) : null;
+      return `<div class="edit-slot">${html}${
+        w && w.locked
+          ? '<span class="edit-lock">always shown</span>'
+          : `<button class="edit-x" data-act="ui-widget-hide" data-id="${id}" title="Remove this window" aria-label="Remove ${esc(w ? w.label : id)}">✕</button>`
+      }</div>`;
+    }).join("\n");
+
+    app.innerHTML = editBar + body;
     fillHomeUploads();
   }
 
@@ -1155,10 +1197,23 @@
       </section>
 
       <section class="panel">
+        <h2>Text size</h2>
+        <p class="muted">Scales the whole page — handy on a small laptop or for long note pages.</p>
+        <div class="sizer">
+          <button class="btn ghost" data-act="ui-scale" data-delta="-5" aria-label="Smaller text">A−</button>
+          <input id="ui-scale" type="range" min="85" max="135" step="5" value="${Math.round((ui.scale || 1) * 100)}" aria-label="Text size">
+          <button class="btn ghost" data-act="ui-scale" data-delta="5" aria-label="Larger text">A+</button>
+          <b id="ui-scale-val">${Math.round((ui.scale || 1) * 100)}%</b>
+          <button class="link" data-act="ui-scale" data-delta="0">Reset</button>
+        </div>
+      </section>
+
+      <section class="panel">
         <h2>Tabs</h2>
         <p class="muted">Drag tabs in the top bar to reorder, or use the arrows here. Hidden tabs can come back at any time.</p>
         <div class="tablist">${ui.tabs.map((id, i) => tabRow(HUB.tabById(id), i, ui.tabs.length)).join("")}</div>
         ${hiddenTabs.length ? `<h3>Hidden tabs</h3><div class="tablist">${hiddenTabs.map((t) => `<div class="tabrow hidden-row"><span class="grow">${esc(t.label)}</span><button class="mini" data-act="ui-tab-show" data-id="${t.id}" title="Show again">+</button></div>`).join("")}</div>` : ""}
+        <p class="tip">Tip: you can also drag any tab along the top bar and drop it where you want it — the order saves straight away.</p>
       </section>
 
       <section class="panel">
@@ -1555,6 +1610,18 @@
       S.ui.font = el.dataset.id;
       saveUI();
     },
+    "ui-scale"(el) {
+      const delta = Number(el.dataset.delta) || 0;
+      const now = Math.round((S.ui.scale || 1) * 100);
+      S.ui.scale = (delta === 0 ? 100 : Math.min(135, Math.max(85, now + delta))) / 100;
+      saveUI();
+    },
+    "edit-toggle"() {
+      editing = !editing;
+      /* The windows live on the home screen, so go there to see what is editable. */
+      if (editing && current.name !== "") go("#/");
+      else paint();
+    },
     "ui-tab-up"(el) {
       S.ui.tabs = HUB.moveItem(S.ui.tabs, el.dataset.id, -1);
       saveUI();
@@ -1634,9 +1701,20 @@
 
   document.addEventListener("dragover", (e) => {
     const dz = e.target.closest && e.target.closest("#dropzone");
-    if (!dz) return;
+    if (dz) {
+      e.preventDefault();
+      dz.classList.add("over");
+      return;
+    }
+    /* A tab dragged along the top bar only drops if dragover is cancelled on the
+       bar itself; without this the browser refuses the drop and the tab snaps
+       back, which is exactly what it used to do. */
+    if (!dragTab) return;
+    const spot = navDropSpot(e);
+    if (!spot) return;
     e.preventDefault();
-    dz.classList.add("over");
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    markNavDrop(spot);
   });
 
   document.addEventListener("dragleave", (e) => {
@@ -1669,10 +1747,40 @@
 
   /* dragging tabs in the top bar reorders them */
   let dragTab = "";
+
+  /* Which side of which tab the pointer is on. null means the pointer is not
+     over the bar at all; end means past the last tab, which appends. */
+  function navDropSpot(e) {
+    const nav = document.getElementById("nav");
+    if (!nav || !nav.contains(e.target)) return null;
+    const link = e.target.closest && e.target.closest(".nav a[data-nav]");
+    if (!link) return { id: null, end: true };
+    const r = link.getBoundingClientRect();
+    return { id: link.dataset.nav || "home", after: e.clientX > r.left + r.width / 2 };
+  }
+
+  function markNavDrop(spot) {
+    const nav = document.getElementById("nav");
+    if (!nav) return;
+    nav.querySelectorAll("a").forEach((a) => a.classList.remove("drop-before", "drop-after"));
+    nav.classList.toggle("drop-end", !!spot.end);
+    if (!spot.id) return;
+    const link = nav.querySelector(`a[data-nav="${spot.id === "home" ? "" : spot.id}"]`);
+    if (link) link.classList.add(spot.after ? "drop-after" : "drop-before");
+  }
+
+  function clearNavDrop() {
+    const nav = document.getElementById("nav");
+    if (!nav) return;
+    nav.querySelectorAll("a").forEach((a) => a.classList.remove("drop-before", "drop-after"));
+    nav.classList.remove("drop-end");
+  }
+
   document.addEventListener("dragstart", (e) => {
     const a = e.target.closest && e.target.closest(".nav a[data-nav]");
     if (!a) return;
     dragTab = a.dataset.nav || "home";
+    clearNavDrop();
     a.classList.add("dragging");
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = "move";
@@ -1686,21 +1794,30 @@
 
   document.addEventListener("dragend", () => {
     dragTab = "";
+    clearNavDrop();
     document.querySelectorAll(".nav a.dragging").forEach((a) => a.classList.remove("dragging"));
   });
 
   document.addEventListener("drop", (e) => {
-    const a = e.target.closest && e.target.closest(".nav a[data-nav]");
-    if (!dragTab || !a) return;
+    if (!dragTab) return;
+    const spot = navDropSpot(e);
+    if (!spot) return;
     e.preventDefault();
-    const toId = a.dataset.nav || "home";
-    const from = S.ui.tabs.indexOf(dragTab);
-    const to = S.ui.tabs.indexOf(toId);
-    if (from < 0 || to < 0 || from === to) return;
-    const next = S.ui.tabs.slice();
-    next.splice(to, 0, next.splice(from, 1)[0]);
+    const id = dragTab;
+    dragTab = "";
+    clearNavDrop();
+    document.querySelectorAll(".nav a.dragging").forEach((a) => a.classList.remove("dragging"));
+    if (spot.id === id) return;
+    const next = S.ui.tabs.filter((x) => x !== id);
+    if (spot.end) next.push(id);
+    else {
+      const at = next.indexOf(spot.id);
+      if (at < 0) return;
+      next.splice(at + (spot.after ? 1 : 0), 0, id);
+    }
     S.ui.tabs = next;
     saveUI();
+    toast("Tab order saved.");
   });
 
   document.addEventListener("change", (e) => {
@@ -1797,6 +1914,24 @@
     if (e.target.id === "typed" && sess && sess.kind === "q") {
       sess.typed[sess.ids[sess.i]] = e.target.value;
       persistSess();
+    }
+    /* Text size: live while the slider moves, saved when it is let go. */
+    if (e.target.id === "ui-scale") {
+      S.ui.scale = Number(e.target.value) / 100;
+      applyLook();
+      const out = $("#ui-scale-val");
+      if (out) out.textContent = e.target.value + "%";
+    }
+  });
+
+  document.addEventListener("change", (e) => {
+    if (e.target.id === "ui-scale") save();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && editing) {
+      editing = false;
+      paint();
     }
   });
 

@@ -61,6 +61,7 @@ window.HubUI = (() => {
     hiddenWidgets: ["photo"],
     palette: "indigo",
     font: "system",
+    scale: 1,
     photo: "",
     photoCaption: "",
   };
@@ -108,6 +109,9 @@ window.HubUI = (() => {
       hiddenWidgets,
       palette: paletteById(raw.palette).id,
       font: fontById(raw.font).id,
+      /* 0.85–1.35 keeps the extremes readable; percentage font-size, so the
+         browser's own text-size preference still counts. */
+      scale: Math.min(1.35, Math.max(0.85, Number(raw.scale) || 1)),
       photo: typeof raw.photo === "string" ? raw.photo : "",
       photoCaption: typeof raw.photoCaption === "string" ? raw.photoCaption.slice(0, 160) : "",
     };
@@ -128,6 +132,7 @@ window.HubUI = (() => {
     const font = fontById(ui.font);
     root.dataset.palette = paletteById(ui.palette).id;
     root.style.setProperty("--font", font.stack);
+    root.style.fontSize = Math.round((Number(ui.scale) || 1) * 100) + "%";
     if (font.google && !document.getElementById("gfont-" + font.id)) {
       const link = document.createElement("link");
       link.id = "gfont-" + font.id;

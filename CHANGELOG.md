@@ -18,6 +18,41 @@ Uploads, study progress and layout choices live in the browser, not in Git.
 They are stored under the key `chem-study-hub.v1`; clearing site data wipes
 them, and **Stats → Export** backs up the study progress.
 
+## 2026-11-01 — tabs you can actually drop, a page you can edit, and a text size
+
+Four things the owner asked for after using the site:
+
+- **Panels sat flush against each other.** Dashboard windows, the uploads box and
+  the schedule box shared edges, so they read as one blob. Everything the page
+  stacks now keeps a 1rem gap (`#app > * + *`), which collapses with the spacing
+  that already existed instead of doubling it.
+- **Tabs could be grabbed but never dropped.** The drag itself worked; the drop
+  was refused because `dragover` was only cancelled over the upload zone, and a
+  browser will not deliver a drop to a target that did not cancel it. The top bar
+  now accepts the drop, shows which side of which tab the pointer is on (a bar
+  on the left or right edge, or at the end), and drops there — including onto the
+  empty space past the last tab. The ↑ ↓ arrows in Look & layout still reorder
+  for touch, and a tip at the foot of that box says so.
+- **Edit mode.** A small ⚗ button in the top bar (next to ◐) turns the home
+  screen into an editable page: every window gets a ✕ to remove it, the hidden
+  ones are listed as “add back” chips, and **Done** (or Escape) leaves. The
+  countdown is marked “always shown” because it is the landing block. Edits save
+  immediately, so there is nothing to confirm.
+- **Text size.** Look & layout → Text size has A− / slider / A+ / Reset from 85%
+  to 135%. It is applied as a percentage `font-size` on `<html>`, so every rem
+  scales together and the browser's own text-size preference still counts.
+
+Verified with a throwaway jsdom harness outside the repo: all 12 routes still
+paint, the drag drop handler reorders `S.ui.tabs` from both sides of a target and
+appends on the end zone, edit mode adds/removes widgets and survives a repaint,
+and the scale normalises to 0.85–1.35 and is written to `documentElement`.
+Not checked: the real drag gesture, the look of the ✕ buttons and the slider —
+no browser here. See `dev/TESTING.md` items 36, 37 and 51–56.
+
+To undo: `git revert` this commit. The panel spacing rule, the new drag
+handlers, edit mode, the ⚗ button and `ui.scale` all go together; an existing
+save keeps working because `HubUI.normalize` simply drops the unknown `scale`.
+
 ## 2026-11-01 — an exam survives a refresh, and dark mode stops flashing white
 
 Four things a student could actually trip over:

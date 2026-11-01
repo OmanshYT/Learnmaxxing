@@ -116,9 +116,10 @@ decision instead of a bug.
 ### Layout and saving
 
 36. **Dragging tabs on a phone or tablet does nothing** — reordering is HTML5
-    drag, which touch does not trigger. The ↑ ↓ arrows are the touch path.
-37. **Dropping a dragged tab on empty page space** reorders nothing and shows no
-    hint; it only works when released directly on another tab.
+    drag, which touch does not trigger. The ↑ ↓ arrows in Look & layout are the
+    touch path.
+37. **Dropping a dragged tab on the page itself** reorders nothing; the drop has
+    to land on the top bar. Released past the last tab, it goes to the end.
 38. **Hiding a tab and showing it again** puts it back at the end of the bar, not
     where it was. Same for dashboard widgets.
 39. **Dark mode follows your operating system** until you press ◐; after that it
@@ -155,3 +156,25 @@ Added with the 2026-11-01 quality pass; each of these needs a real browser.
     Enter should land in the page body, not on the top bar.
 50. **Reduced motion** — turn that OS setting on: the toast and the card flips
     should stop animating.
+
+### Drop, edit, scale
+
+Added with the 2026-11-01 layout pass.
+
+51. **Drag a tab onto another tab** — a bar appears on the side you are hovering;
+    release it there and the tab should land in that spot. Reload: the order is
+    kept.
+52. **Drag a tab past the last one** — drop on the empty space right of the last
+    tab in the top bar (or on the bar's background): it should move to the end.
+    On a narrow window the bar scrolls instead, so this is easiest on a laptop.
+53. **Edit mode** — the ⚗ button next to ◐ should turn the page into edit mode
+    (dashed outlines, ✕ on each window). Remove “Chapter progress”, then add it
+    back with its chip. **Done** and Escape leave edit mode; a fresh tab must
+    open in normal mode.
+54. **Countdown is not removable** — the first window should say “always shown”
+    and have no ✕.
+55. **Text size** — drag the slider from 85% to 135%: the whole page should grow
+    smoothly while dragging and keep the choice after a reload; Reset returns to
+    100%. Check a quiz question and the settings page, not just the home screen.
+56. **Spacing** — windows and panels should have a clear gap on every page
+    (home, chapters, part notes, stats), and on a phone-width window too.
