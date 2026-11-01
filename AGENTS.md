@@ -97,7 +97,10 @@ Palettes carry light and dark values; fonts load from Google Fonts on demand.
 - `localStorage["chem-study-hub.v1"]` — progress, flags, stats, and `ui` settings.
 - IndexedDB `chem-uploads` / `materials` — uploaded files and their parsed text.
 
-Clearing site data wipes both. Stats → Export backs up progress only.
+Clearing site data wipes both. Stats → “Export everything” backs up progress,
+layout and upload text in one file (older progress-only files still import).
+`sw.js` caches the shell for offline use; bump its `VERSION` when changing the
+precache list, and keep its paths relative so the Pages sub-path keeps working.
 
 ## Gotchas learned the hard way
 

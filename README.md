@@ -13,7 +13,8 @@ python build.py "C:\Users\bmw27\Documents\Studying Vault"
 ## Files
 
 - `build.py`: parses notes, practice questions, extra practice, flashcards, schedule, formula sheet.
-- `app.js`: router, quiz engine, spaced repetition, stats, search. Progress lives in this browser's localStorage. Use Stats → Export to back it up.
+- `app.js`: router, quiz engine, spaced repetition, stats, search. Progress lives in this browser's localStorage and uploads in IndexedDB; Stats → "Export everything" backs both up.
+- `sw.js`, `manifest.webmanifest`, `icon.svg`, `icon-192.png`, `icon-512.png`: offline cache and install assets. Bump `VERSION` in `sw.js` when the precache list changes.
 - `styles.css`: light/dark theme.
 
 ## Quiz modes

@@ -18,6 +18,54 @@ Uploads, study progress and layout choices live in the browser, not in Git.
 They are stored under the key `chem-study-hub.v1`; clearing site data wipes
 them, and **Stats → Export** backs up the study progress.
 
+## 2026-11-01 — backups that include the uploads, a fairer quiz, and a site you can install
+
+Five follow-ups from the review list. Everything is still client-side: no build
+step, no dependency, no server.
+
+- **“Export everything” covers uploads.** Stats → Backup now writes one file with
+  `progress` (which includes your layout) and `uploads`, the parsed text of every
+  document in IndexedDB. Uploads were the only unrecoverable thing here — a
+  cleared browser took them with it — and the export did not include them.
+  “Progress only” is still there for a tiny file. Import reads both shapes, so a
+  file exported before this change still restores. `Library.restore` re-checks
+  every field, caps the text at the same 400k limit as an upload, and keeps the
+  original ids so nothing that referred to an upload dangles.
+- **The quiz stopped inventing unfair questions.** Two definitions that differ
+  only past the 130-character cut used to appear as two identical options; a
+  question whose options read the same is now dropped. Compound units are
+  blanked whole, so “−890 kJ/mol” no longer leaves a dangling “/mol” behind.
+  Repeated stems are filtered out, and every generated question carries
+  `source`, the sentence or definition it came from, which the mini quiz shows
+  under the answer and in “Worth another look”.
+- **Search reaches the formula sheet and your uploads.** The formula sheet is
+  stored as HTML and was never searched; it is now matched on its text. Uploads
+  live in IndexedDB, so their hits arrive after the page paints, with a line of
+  context around the match and a link straight to the document.
+- **The site installs and works offline.** `manifest.webmanifest`, a generated
+  flask icon (SVG plus real 192 and 512 PNGs) and `sw.js`, a cache-first shell
+  with a background refresh. `data.js` and the notes are cached, so the hub opens
+  with no signal; a new deploy arrives on the next visit online. Registration is
+  relative, so it works under the `/Learnmaxxing/` Pages sub-path.
+- **Tabs can be dragged on a touch screen.** HTML5 drag is mouse-only, so the
+  bar now also listens to pointer events: tap still navigates, press and hold a
+  tab for a moment and slide it. The order saves on release, Escape cancels, and
+  the ↑ ↓ arrows remain for anyone who prefers them.
+
+Checked with a throwaway jsdom harness outside the repo (29 checks): export
+carries uploads and progress, both import shapes restore, quiz options are
+unique, the compound unit is blanked whole, sources are attached, formula and
+upload hits render, a tap does not reorder while a hold drops the tab after the
+pointer, `sw.js` registers and precaches only files that exist, and the 512 icon
+is a real 512×512 PNG. Existing suites still pass (28 + 31 + 9). Not checked:
+real touch gestures, the install prompt and offline reload in a real browser —
+there is none here. See `dev/TESTING.md` 58–64.
+
+To undo: `git revert` this commit. It deletes `sw.js`, `manifest.webmanifest`
+and the icons as well as the code changes; the cache they create is dropped by
+the browser on its own. Saved data is untouched — the backup format is additive
+and `HubUI.normalize` ignores what it does not know.
+
 ## 2026-11-01 — “Next up” stops printing its own links
 
 The home dashboard's schedule window read

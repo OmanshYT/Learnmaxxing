@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Chem Study Hub">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4b5cf0"/>
+      <stop offset="1" stop-color="#20c4b0"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#g)"/>
+  <path d="M28 15h8v14l12 20a3 3 0 0 1-2.6 4.5H18.6A3 3 0 0 1 16 49l12-20z" fill="#0e1220" opacity=".2"/>
+  <path d="M29 14h6v15.4l12.2 20.4A2 2 0 0 1 45.5 53h-27A2 2 0 0 1 16.8 49.8L29 29.4z" fill="#fff"/>
+  <path d="M22.6 43h18.8l5.2 8.7A1.6 1.6 0 0 1 45.2 54H18.8a1.6 1.6 0 0 1-1.4-2.3z" fill="#4b5cf0" opacity=".85"/>
+  <circle cx="32" cy="38" r="2.2" fill="#4b5cf0" opacity=".55"/>
+</svg>

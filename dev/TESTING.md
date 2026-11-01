@@ -182,3 +182,32 @@ Added with the 2026-11-01 layout pass.
     Mole (20 min) (+10 min: missed questions)” with only the title clickable and
     no `<a href=…>` showing. Check a day with no part attached too: the task
     should be plain text, not a link.
+
+### Backups, search, install, touch
+
+Added with the 2026-11-01 follow-up pass; all of these need a real browser.
+
+58. **Round trip** — with an upload or two and some progress, Stats → “Export
+    everything”, then clear this site's data (or open a private window) and import
+    the file: uploads, progress and layout should all come back, and the upload's
+    flashcards should still open.
+59. **An old backup** — a `chem-study-progress.json` exported before this change
+    should still import, and must not touch your uploads.
+60. **Install** — the address bar's install button (or Add to Home Screen) should
+    offer the name “Chem Study Hub” with the flask icon, and open without browser
+    chrome. If no prompt appears, the browser wants a PNG icon set it accepts —
+    check Chrome's Application → Manifest panel for the reason.
+61. **Offline** — load the site once, go offline, reload: it should open and you
+    should be able to quiz from the cache. Reconnect and reload: the new build
+    should arrive on that reload. (Safari private windows ignore service workers.)
+62. **Touch reorder** — on a phone, a tap on a tab still navigates; press and hold
+    for a moment, then slide: the tab should land where you let go, the page
+    should not scroll underneath, and the order should survive a reload.
+63. **Search everything** — search a word from one of your uploads: it should
+    appear under “Your uploads” with a line of context and open the document.
+    Search a word from the formula sheet (try “ideal” or “pressure”): a “Formula
+    sheet” result should appear.
+64. **Quiz source** — answer a mini-quiz question: “From your notes: …” should
+    appear under the answer, and again in “Worth another look” for a miss. On
+    notes with units, a number question's blank should swallow “kJ/mol” whole
+    instead of leaving “/mol” behind.

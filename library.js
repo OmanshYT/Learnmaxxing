@@ -53,6 +53,24 @@ window.Library = (() => {
   const get = (id) => tx("readonly", (s) => s.get(id));
   const remove = (id) => tx("readwrite", (s) => s.delete(id));
 
+  /* Restoring a backup keeps the original ids, so whatever referred to an upload
+     (an open card deck, a mini quiz) still lines up afterwards. The rows come
+     from a file the user chose, so every field is re-checked and re-capped. */
+  function restore(rows) {
+    const clean = (Array.isArray(rows) ? rows : [])
+      .filter((r) => r && typeof r === "object" && typeof r.text === "string")
+      .map((r, i) => ({
+        id: String(r.id || "u" + Date.now().toString(36) + i).slice(0, 60),
+        title: String(r.title || "Untitled upload").slice(0, 90),
+        kind: String(r.kind || "text"),
+        size: Number(r.size) || String(r.text).length,
+        text: String(r.text).slice(0, MAX_TEXT),
+        addedAt: Number(r.addedAt) || Date.now(),
+      }));
+    if (!clean.length) return Promise.resolve(0);
+    return tx("readwrite", (s) => clean.forEach((row) => s.put(row))).then(() => clean.length);
+  }
+
   function save({ title, kind, text, size }) {
     const body = String(text || "").slice(0, MAX_TEXT);
     const row = {
@@ -534,7 +552,9 @@ window.Library = (() => {
     return out;
   }
 
-  const UNITS = /\b\d+(?:\.\d+)?(?:\s*[×x]\s*10[⁻⁺]?\d*)?\s*(?:kJ|J|mol|g|kg|mg|mL|L|nm|pm|K|°C|M|atm|kPa|Pa|mmHg|s|min|h|%)\b/;
+  /* A quantity is often written with a compound unit, and blanking only the
+     first half left a dangling "/mol" (or a "kJ·mol⁻¹" tail) in the sentence. */
+  const UNITS = /\b\d+(?:\.\d+)?(?:\s*[×x]\s*10[⁻⁺]?\d*)?\s*(?:kJ|J|mol|g|kg|mg|mL|L|nm|pm|K|°C|°F|atm|kPa|Pa|mmHg|ms|min|h|M|s|%)(?:\s*(?:\/|·)\s*[A-Za-z][A-Za-z0-9]*[⁻⁺]?[¹²³]?)?(?![A-Za-z0-9])/;
 
   function clozeItems(text, defs) {
     const terms = [...new Set(defs.map((d) => d.term))].filter((t) => t.length >= 3);
@@ -550,7 +570,7 @@ window.Library = (() => {
         const key = blanked.toLowerCase();
         if (used.has(key)) return;
         used.add(key);
-        out.push({ q: `Fill in the blank: ${blanked}`, a: hit });
+        out.push({ q: `Fill in the blank: ${blanked}`, a: hit, source: s });
         return;
       }
       const num = s.match(UNITS);
@@ -559,7 +579,7 @@ window.Library = (() => {
       const key = blanked.toLowerCase();
       if (used.has(key)) return;
       used.add(key);
-      out.push({ q: `Fill in the blank: ${blanked}`, a: num[0].trim() });
+      out.push({ q: `Fill in the blank: ${blanked}`, a: num[0].trim(), source: s });
     });
     return out;
   }
@@ -612,6 +632,16 @@ window.Library = (() => {
 
   const cut = (s, n = 130) => (s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s);
   const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  /* Two options that read the same are a coin toss, not a question: a pair of
+     definitions that only differ past the 130-character cut used to come out as
+     two identical choices. Compare them the way a student reads them. */
+  const normOpt = (s) =>
+    String(s || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .replace(/[.…]+$/, "")
+      .trim();
+  const distinctOpts = (opts) => new Set(opts.map(normOpt)).size === opts.length;
 
   /*
     Quiz design: every question is about the terms, but never the same shape twice
@@ -624,6 +654,14 @@ window.Library = (() => {
     const terms = [...new Set(defs.map((d) => d.term))];
     const rnd = mulberry32(fnv(text));
     const out = [];
+    const stems = new Set();
+    /* Same wording twice in one quiz is just two guesses at one question. */
+    const add = (q) => {
+      const key = normOpt(q.q);
+      if (stems.has(key)) return;
+      stems.add(key);
+      out.push(q);
+    };
     const others = (term) => terms.filter((t) => t !== term);
 
     if (terms.length >= 4) {
@@ -631,12 +669,13 @@ window.Library = (() => {
         const picks = sample(others(d.term), 3, rnd);
         if (picks.length === 3) {
           const options = shuffle([d.term, ...picks], rnd);
-          out.push({
+          add({
             type: "Definition → term",
             q: `Which term matches this description?\n\n“${cut(d.def)}”`,
             options,
             answer: options.indexOf(d.term),
             explain: `${d.term}: ${d.def}`,
+            source: d.def,
           });
         }
         if (i % 2 === 1) {
@@ -646,14 +685,15 @@ window.Library = (() => {
             3,
             rnd
           );
-          if (dpicks.length === 3) {
+          if (dpicks.length === 3 && distinctOpts([right, ...dpicks])) {
             const options = shuffle([right, ...dpicks], rnd);
-            out.push({
+            add({
               type: "Term → definition",
               q: `Which description matches “${d.term}”?`,
               options,
               answer: options.indexOf(right),
               explain: `${d.term}: ${d.def}`,
+              source: d.def,
             });
           }
         }
@@ -663,12 +703,13 @@ window.Library = (() => {
           const picks2 = sample(others(d.term), 3, rnd);
           if (blanked !== d.def && picks2.length === 3) {
             const options = shuffle([d.term, ...picks2], rnd);
-            out.push({
+            add({
               type: "Fill in the blank",
               q: `Fill in the blank.\n\n“${cut(blanked)}”`,
               options,
               answer: options.indexOf(d.term),
               explain: `${d.term}: ${d.def}`,
+              source: d.def,
             });
           }
         }
@@ -682,12 +723,13 @@ window.Library = (() => {
       const picks = sample(pool, 3, rnd);
       if (picks.length < 3) return;
       const options = shuffle([c.a, ...picks], rnd);
-      out.push({
+      add({
         type: isTerm ? "Fill in the blank" : "Numbers & units",
         q: c.q,
         options,
         answer: options.indexOf(c.a),
         explain: isTerm ? "" : `Answer: ${c.a}`,
+        source: c.source || "",
       });
     });
     return shuffle(out, rnd).slice(0, 40);
@@ -705,6 +747,7 @@ window.Library = (() => {
     get,
     remove,
     save,
+    restore,
     extract,
     kindOf,
     toHtml,

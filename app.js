@@ -1109,7 +1109,7 @@
         <p class="sub">${pct(uq.score / uq.items.length)} correct on this mini quiz.</p>
         ${missed.length
           ? `<h3>Worth another look</h3><ul class="plain">${missed
-              .map((r) => `<li>${esc(r.stem)}<br><span class="muted">${esc(r.right)}</span></li>`)
+              .map((r) => `<li>${esc(r.stem)}<br><span class="muted">${esc(r.right)}</span>${r.source ? `<br><span class="src">From your notes: “${esc(r.source.slice(0, 180))}”</span>` : ""}</li>`)
               .join("")}</ul>`
           : `<p class="muted">Every question correct — try the flashcards to lock it in.</p>`}
         <div class="row">
@@ -1137,6 +1137,7 @@
       ${picked == null
         ? `<p class="keys">Pick an answer.</p>`
         : `<p class="keys">${q.explain ? esc(q.explain) : `Correct answer: ${esc(right)}`}</p>
+           ${q.source ? `<p class="src">From your notes: “${esc(q.source.slice(0, 220))}”</p>` : ""}
            <div class="actions"><button class="btn primary" data-act="up-next">${uq.i + 1 === uq.items.length ? "See result" : "Next question"}</button></div>`}
     </section>`;
   }
@@ -1327,11 +1328,27 @@
         <h2>Last 12 weeks</h2>
         <div class="heat">${cells.join("")}</div>
       </section>
-      <section class="panel row wrap-row">
-        <button class="btn ghost" data-act="export">Export progress</button>
-        <label class="btn ghost file">Import progress<input type="file" id="import" accept="application/json"></label>
-        <button class="btn bad" data-act="reset">Reset progress</button>
+      <section class="panel">
+        <h2>Backup</h2>
+        <p class="muted">One file with your progress, your layout and your uploads. Clearing site data wipes all three, so keep a copy somewhere else.</p>
+        <div class="row wrap-row">
+          <button class="btn primary" data-act="export-all">Export everything</button>
+          <label class="btn ghost file">Import backup<input type="file" id="import" accept="application/json"></label>
+          <button class="btn ghost" data-act="export">Progress only</button>
+          <button class="btn bad" data-act="reset">Reset progress</button>
+        </div>
+        <p class="tip" id="backup-note">Uploads are stored separately from progress.</p>
       </section>`;
+    const note = $("#backup-note");
+    if (note && LIB) {
+      LIB.list()
+        .then((rows) => {
+          if (note.isConnected) note.textContent = `${rows.length} upload${rows.length === 1 ? "" : "s"} saved in this browser.`;
+        })
+        .catch(() => {
+          /* a blocked IndexedDB should not break the stats page */
+        });
+    }
   }
 
   function viewSearch() {
@@ -1349,14 +1366,55 @@
       Object.values(PARTS).forEach((p) => {
         if (plainOf(p.learn).toLowerCase().includes(term)) hits.push({ href: `#/part/${p.id}`, title: `${p.id} ${p.title}`, text: "Notes" });
       });
+      /* The formula sheet is stored as HTML, so search its words, not its tags. */
+      const formula = plainOf(D.formula);
+      const at = formula.toLowerCase().indexOf(term);
+      if (at >= 0) hits.push({ href: "#/reference", title: "Formula sheet", text: snippetAt(formula, at) });
     }
     const seen = new Set();
     const list = hits.filter((h) => (seen.has(h.href + h.text) ? false : seen.add(h.href + h.text)));
     app.innerHTML = `
       <header class="page-head"><h1>Search</h1><p class="sub">${term ? `${list.length} results for “${esc(term)}”` : "Type in the search box above."}</p></header>
       <section class="part-list">
-        ${list.slice(0, 80).map((h) => `<a class="panel part-row" href="${h.href}"><div><h3>${esc(h.title)}</h3><small>${esc(h.text.slice(0, 160))}</small></div></a>`).join("")}
-      </section>`;
+        ${list.length ? list.slice(0, 80).map((h) => `<a class="panel part-row" href="${h.href}"><div><h3>${esc(h.title)}</h3><small>${esc(h.text.slice(0, 160))}</small></div></a>`).join("") : term ? `<p class="muted">Nothing in the course notes matches that.</p>` : ""}
+      </section>
+      ${term ? `<section class="panel"><h2>Your uploads</h2><div id="search-uploads"><p class="muted">Searching your uploads…</p></div></section>` : ""}`;
+    if (term) fillUploadSearch(term);
+  }
+
+  /* A line of context around a hit, so the result reads as a sentence. */
+  function snippetAt(text, at) {
+    const start = Math.max(0, at - 60);
+    return (start ? "…" : "") + text.slice(start, at + 120).replace(/\s+/g, " ").trim() + "…";
+  }
+
+  /* Uploads live in IndexedDB, so their hits arrive after the page has painted. */
+  function fillUploadSearch(term) {
+    const box = $("#search-uploads");
+    if (!box || !LIB) return;
+    LIB.list()
+      .then((rows) => {
+        if (!box.isConnected || current.name !== "search") return;
+        if (!rows.length) {
+          box.innerHTML = `<p class="muted">No uploads yet. <a href="#/upload">Add your notes</a> and they become searchable here.</p>`;
+          return;
+        }
+        const found = [];
+        rows.forEach((m) => {
+          const text = String(m.text || "").replace(/\s+/g, " ");
+          const at = text.toLowerCase().indexOf(term);
+          if (at < 0) return;
+          found.push({ href: `#/upload/${encodeURIComponent(m.id)}?tab=study`, title: m.title, text: snippetAt(text, at) });
+        });
+        box.innerHTML = found.length
+          ? `<div class="part-list">${found
+              .map((h) => `<a class="panel part-row" href="${h.href}"><div><h3>${esc(h.title)}</h3><small>${esc(h.text.slice(0, 200))}</small></div></a>`)
+              .join("")}</div>`
+          : `<p class="muted">No matches in your ${rows.length} upload${rows.length === 1 ? "" : "s"}.</p>`;
+      })
+      .catch((e) => {
+        box.innerHTML = `<p class="muted">${esc(e.message || "Your uploads could not be read in this browser.")}</p>`;
+      });
   }
 
   /* ---------- actions (event delegation) ---------- */
@@ -1571,7 +1629,7 @@
       uq.picked = Number(el.dataset.n);
       const ok = uq.picked === q.answer;
       if (ok) uq.score += 1;
-      (uq.log || (uq.log = [])).push({ ok, stem: q.q.split("\n\n").pop(), right: q.options[q.answer] });
+      (uq.log || (uq.log = [])).push({ ok, stem: q.q.split("\n\n").pop(), right: q.options[q.answer], source: q.source });
       paint();
     },
     "up-next"() {
@@ -1602,6 +1660,27 @@
     sched() {},
     print() {
       window.print();
+    },
+    /* Everything in one file: progress, layout and the uploaded documents. The
+       uploads are the only unrecoverable part, so they belong in the backup. */
+    "export-all"() {
+      const rows = LIB ? LIB.list().catch(() => []) : Promise.resolve([]);
+      rows.then((uploads) => {
+        const payload = {
+          app: "chem-study-hub",
+          version: 2,
+          exportedAt: new Date().toISOString(),
+          progress: S,
+          uploads,
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `chem-study-hub-${isoOf(new Date())}.json`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        toast(`Exported progress, layout and ${uploads.length} upload${uploads.length === 1 ? "" : "s"}.`);
+      });
     },
     export() {
       const blob = new Blob([JSON.stringify(S, null, 2)], { type: "application/json" });
@@ -1836,6 +1915,118 @@
     toast("Tab order saved.");
   });
 
+  /* ---------- reordering by touch ---------- */
+  /* HTML5 drag is mouse-only, so a phone gets pointer events instead: press and
+     hold a tab for a moment, then slide it. A quick tap still navigates, and
+     moving before the hold completes means the user wanted to scroll. */
+  let touchDrag = null;
+  let pendingHold = null;
+  let holdTimer = 0;
+  let muteNavClick = false;
+
+  const navOf = () => document.getElementById("nav");
+
+  function endTouchDrag(save) {
+    clearTimeout(holdTimer);
+    holdTimer = 0;
+    pendingHold = null;
+    if (!touchDrag) return;
+    touchDrag.el.classList.remove("dragging");
+    document.body.classList.remove("reordering");
+    touchDrag = null;
+    clearNavDrop();
+    if (!save) return;
+    /* Hidden tabs are not in the bar, so keep them after the visible ones in
+       their old relative order rather than dropping them. */
+    const shown = [...navOf().querySelectorAll("a[data-nav]")].map((a) => a.dataset.nav || "home");
+    const rest = S.ui.tabs.filter((id) => !shown.includes(id));
+    S.ui.tabs = [...shown, ...rest];
+    muteNavClick = true;
+    setTimeout(() => (muteNavClick = false), 400);
+    saveUI();
+    toast("Tab order saved.");
+  }
+
+  document.addEventListener(
+    "pointerdown",
+    (e) => {
+      if (e.pointerType !== "touch") return;
+      const a = e.target.closest && e.target.closest(".nav a[data-nav]");
+      if (!a) return;
+      pendingHold = { x: e.clientX, y: e.clientY };
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => {
+        touchDrag = { el: a, id: a.dataset.nav || "home" };
+        pendingHold = null;
+        a.classList.add("dragging");
+        document.body.classList.add("reordering");
+        try {
+          if (navigator.vibrate) navigator.vibrate(10);
+        } catch (err) {
+          /* vibrations are a nicety */
+        }
+      }, 260);
+    },
+    { passive: true }
+  );
+
+  document.addEventListener(
+    "pointermove",
+    (e) => {
+      if (!touchDrag) {
+        if (pendingHold && (Math.abs(e.clientX - pendingHold.x) > 10 || Math.abs(e.clientY - pendingHold.y) > 10)) {
+          clearTimeout(holdTimer);
+          holdTimer = 0;
+          pendingHold = null;
+        }
+        return;
+      }
+      e.preventDefault();
+      const el = touchDrag.el;
+      const under = document.elementFromPoint ? document.elementFromPoint(e.clientX, e.clientY) : null;
+      const nav = navOf();
+      if (!nav) return;
+      const link = under && under.closest ? under.closest(".nav a[data-nav]") : null;
+      nav.classList.remove("drop-end");
+      nav.querySelectorAll("a").forEach((a) => a.classList.remove("drop-before", "drop-after"));
+      if (link && link !== el) {
+        const r = link.getBoundingClientRect();
+        const after = e.clientX > r.left + r.width / 2;
+        nav.insertBefore(el, after ? link.nextSibling : link);
+        link.classList.add(after ? "drop-after" : "drop-before");
+      } else if (!link && nav.contains(under)) {
+        nav.appendChild(el);
+        nav.classList.add("drop-end");
+      }
+    },
+    { passive: false }
+  );
+
+  document.addEventListener("pointerup", () => endTouchDrag(true));
+  document.addEventListener("pointercancel", () => endTouchDrag(false));
+
+  /* The bar is a list of links, so a finished drag must not navigate. */
+  document.addEventListener(
+    "click",
+    (e) => {
+      if (!muteNavClick) return;
+      const a = e.target.closest && e.target.closest(".nav a[data-nav]");
+      if (!a) return;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    true
+  );
+
+  /* While a tab is held, the page must not scroll underneath it. */
+  document.addEventListener(
+    "touchmove",
+    (e) => {
+      if (touchDrag) e.preventDefault();
+    },
+    { passive: false }
+  );
+
   document.addEventListener("change", (e) => {
     const t = e.target;
     if (t.matches('[data-act="sched"]')) {
@@ -1845,22 +2036,48 @@
       paint();
     }
     if (t.id === "import" && t.files[0]) {
+      const file = t.files[0];
+      t.value = ""; // so choosing the same file twice still fires
       const reader = new FileReader();
       reader.onload = () => {
+        let data;
         try {
-          const data = JSON.parse(reader.result);
-          S = { q: {}, cards: {}, log: [], sched: {}, settings: {}, ...data };
-          if (HUB) S.ui = HUB.normalize(S.ui);
-          renderNav();
-          applyLook();
-          save();
-          toast("Progress imported.");
-          paint();
+          data = JSON.parse(String(reader.result));
         } catch (err) {
-          toast("That file is not a valid progress export.");
+          toast("That file is not a valid backup.");
+          return;
         }
+        /* Older exports are the progress object itself; newer ones wrap it next
+           to the uploads. Accept both so a year-old file still restores. */
+        const progress = data && typeof data === "object" && data.progress && typeof data.progress === "object" ? data.progress : data;
+        if (!progress || typeof progress !== "object") {
+          toast("That file is not a valid backup.");
+          return;
+        }
+        const uploads = data && Array.isArray(data.uploads) ? data.uploads : [];
+        S = { q: {}, cards: {}, log: [], sched: {}, settings: {}, ...progress };
+        if (HUB) S.ui = HUB.normalize(S.ui);
+        renderNav();
+        applyLook();
+        save();
+        const done = (saved) => {
+          genCache.clear();
+          openMat = null;
+          deck = null;
+          uq = null;
+          toast(saved ? `Backup restored: progress, layout and ${saved} upload${saved === 1 ? "" : "s"}.` : "Progress imported.");
+          paint();
+        };
+        if (uploads.length && LIB) {
+          LIB.restore(uploads)
+            .then(done)
+            .catch(() => {
+              toast("Progress restored, but the uploads could not be saved.");
+              done(0);
+            });
+        } else done(0);
       };
-      reader.readAsText(t.files[0]);
+      reader.readAsText(file);
     }
     if (t.id === "up-file" && t.files && t.files.length) {
       const files = [...t.files];
@@ -1949,6 +2166,7 @@
       editing = false;
       paint();
     }
+    if (e.key === "Escape" && touchDrag) endTouchDrag(false);
   });
 
   /* keyboard shortcuts for practice, exam and flashcards */
@@ -1983,6 +2201,15 @@
   restoreSess();
   const sForm = document.getElementById("search-form");
   if (sForm) sForm.setAttribute("autocomplete", "off");
+  /* Offline shell. Relative registration keeps it working under a Pages
+     sub-path; a browser without support simply skips this. */
+  if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(() => {
+        /* caching is a bonus — the site works without it */
+      });
+    });
+  }
   window.addEventListener("hashchange", route);
   route();
 })();

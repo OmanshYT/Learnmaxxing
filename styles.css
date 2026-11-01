@@ -508,6 +508,17 @@ body.editing .edit-slot {
   color: var(--muted); font-size: .7rem; font-weight: 600;
 }
 
+/* Where a mini-quiz answer came from in the uploaded notes. */
+.src {
+  margin: .5rem 0 0; padding-left: .6rem; border-left: 2px solid var(--line);
+  color: var(--muted); font-size: .85rem; font-style: italic;
+}
+
+/* A tab held down on a touch screen: the page must not scroll or select. */
+.nav a { -webkit-touch-callout: none; }
+body.reordering { user-select: none; -webkit-user-select: none; }
+body.reordering .nav a { touch-action: none; }
+
 /* ---------- uploads ---------- */
 .dropzone {
   text-align: center; padding: 2rem 1.25rem; border-style: dashed; border-width: 2px;
