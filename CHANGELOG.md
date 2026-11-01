@@ -18,6 +18,23 @@ Uploads, study progress and layout choices live in the browser, not in Git.
 They are stored under the key `chem-study-hub.v1`; clearing site data wipes
 them, and **Stats → Export** backs up the study progress.
 
+## 2026-11-01 — sample PDF for testing uploads
+
+`dev/test-notes.pdf` is a two-page chemistry handout to upload instead of hunting
+for a real worksheet: five glossary lines that parse, four deliberate misses, a
+two-column row, and a raised superscript. `dev/make-test-pdf.py` builds it by
+hand with no dependencies, so it can be regenerated or edited; `dev/TESTING.md`
+opens with what a correct upload of it looks like.
+
+Checked before committing, in Node with pdf.js 4.10.38 (the version the site
+pins) and the site's own `Library.definitions`/`makeQuiz`: 5 terms, 9 cards, 11
+questions, four question types, and every row inside the margins with no
+overlapping text runs. How it looks on screen has not been seen — there is no
+PDF renderer here.
+
+To undo: `git revert` this commit and delete both files. The site does not
+reference either of them, so nothing else changes.
+
 ## 2026-10-31 — tough spots checklist
 
 `dev/TESTING.md` grows a second section listing the places the code behaves in a

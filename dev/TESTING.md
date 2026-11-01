@@ -2,6 +2,23 @@
 
 A running list of checks that need a real browser. Ask for it and it comes back as-is.
 
+## Sample file to upload
+
+`dev/test-notes.pdf` is a two-page chemistry handout built for this list, so there is no need to hunt for a
+worksheet first. Rebuild it with `python3 dev/make-test-pdf.py`.
+
+Upload it and you should get **5 terms** — Enthalpy, Entropy, Gibbs free energy, Catalyst, Le Chatelier's
+principle — then 9 cards and 11 questions. Four lines are wrong on purpose, and each one should be dropped
+rather than guessed at:
+
+- `Mole — mol`: the definition is under twelve characters.
+- the second `Entropy` line: the first definition of a term wins.
+- `Electronegativity`: its definition is on the next line, not the same line.
+- the eleven-word `The second law of thermodynamics…` term: over six words.
+
+The two-column row and the raised `6.022 × 10` superscript arrive mangled, and a glossary line long enough to
+wrap loses everything after the wrap. Both are properties of reading text back out of a PDF, not of this file.
+
 ## Uploads
 
 1. **PDF upload** — drag one of the course worksheet PDFs onto the Upload page. Text extraction was verified against
