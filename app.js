@@ -205,13 +205,60 @@
     toast.t = setTimeout(() => el.classList.remove("show"), 2200);
   }
 
-  /* ---------- session state (in memory; progress itself is in S) ---------- */
+  /* ---------- session state (progress itself is in S) ----------
+     A refresh used to throw away a half-finished exam. The live session is
+     mirrored into sessionStorage and picked back up on load; it is dropped on
+     exit and on any page that is not the session itself, so a finished attempt
+     never comes back stale. */
   let sess = null;
   let timerHandle = null;
+  const SESS_KEY = "chem-study-hub.session.v1";
+  const onSessionPage = () => /^#?\/(session|review)\b/.test(location.hash);
+
   function stopTimer() {
     if (timerHandle) {
       clearInterval(timerHandle);
       timerHandle = null;
+    }
+  }
+
+  function persistSess() {
+    try {
+      if (sess && onSessionPage()) sessionStorage.setItem(SESS_KEY, JSON.stringify(sess));
+      else sessionStorage.removeItem(SESS_KEY);
+    } catch (e) {
+      /* private mode or quota: the session just will not survive a refresh */
+    }
+  }
+
+  function restoreSess() {
+    if (!onSessionPage()) return;
+    let s = null;
+    try {
+      s = JSON.parse(sessionStorage.getItem(SESS_KEY) || "null");
+    } catch (e) {
+      return;
+    }
+    if (!s || typeof s !== "object") return;
+    if (s.kind === "q") {
+      if (!Array.isArray(s.ids) || !s.ids.length || !s.ids.every((id) => QMAP[id])) return;
+      s.i = Math.min(Math.max(0, Number(s.i) || 0), s.ids.length - 1);
+      if (!s.res || typeof s.res !== "object") s.res = {};
+      if (!s.typed || typeof s.typed !== "object") s.typed = {};
+      if (!s.cur || typeof s.cur !== "object") s.cur = { picked: null, revealed: false, hint: false, check: null };
+      if (s.exam && s.deadline) {
+        s.left = Math.max(0, Math.round((s.deadline - Date.now()) / 1000));
+        if (s.left <= 0 && s.phase === "take") {
+          s.phase = "grade";
+          stopTimer();
+        }
+      }
+      if (!["take", "grade", "done"].includes(s.phase)) s.phase = "take";
+      sess = s;
+    } else if (s.kind === "cards") {
+      if (!Array.isArray(s.queue) || !s.queue.length || !s.queue.every((id) => CMAP[id])) return;
+      s.i = Math.min(Math.max(0, Number(s.i) || 0), s.queue.length);
+      sess = s;
     }
   }
 
@@ -235,6 +282,7 @@
       phase: "take",
       t0: Date.now(),
       left: minutes * 60,
+      deadline: minutes ? Date.now() + minutes * 60e3 : 0,
     };
     go("#/session");
   }
@@ -269,6 +317,13 @@
       a.classList.toggle("active", on);
     });
     paint();
+    /* Repainting discards whatever had focus, so put it on the new page: a
+       keyboard user then starts at the content, not back up in the top bar. */
+    try {
+      app.focus({ preventScroll: true });
+    } catch (e) {
+      app.focus();
+    }
     window.scrollTo(0, 0);
   }
   function paint() {
@@ -289,6 +344,7 @@
       settings: viewSettings,
     };
     (views[current.name] || viewHome)();
+    persistSess();
   }
 
   const bar = (p) => `<div class="bar"><span style="width:${Math.round((p || 0) * 100)}%"></span></div>`;
@@ -536,7 +592,11 @@
   }
 
   function tick() {
-    sess.left -= 1;
+    // Derived from a deadline, not a counter: browsers throttle timers in a
+    // hidden tab, so subtracting one per tick would hand back minutes that
+    // were never really left.
+    sess.left = sess.deadline ? Math.max(0, Math.round((sess.deadline - Date.now()) / 1000)) : sess.left - 1;
+    persistSess();
     const el = $("#timer");
     if (el) el.textContent = fmtTime(Math.max(0, sess.left));
     if (sess.left <= 0) {
@@ -690,9 +750,9 @@
         <div class="tile bad"><b>${missed}</b><span>missed</span></div>
         <div class="tile"><b>${n - got - partial - missed}</b><span>ungraded</span></div>
       </div>
-      <table class="tbl"><thead><tr><th>Part</th><th>Got</th><th>Partial</th><th>Missed</th><th>Score</th></tr></thead><tbody>
+      <div class="table-wrap"><table class="tbl"><thead><tr><th>Part</th><th>Got</th><th>Partial</th><th>Missed</th><th>Score</th></tr></thead><tbody>
         ${Object.entries(byPart).map(([id, r]) => `<tr><td>${id} ${esc(r.title)}</td><td>${r.got}</td><td>${r.partial}</td><td>${r.missed}</td><td>${pct(r.n ? (r.got + r.partial * 0.5) / r.n : 0)}</td></tr>`).join("")}
-      </tbody></table>
+      </tbody></table></div>
       <div class="row wrap-row">
         ${retry.length ? `<button class="btn primary" data-act="retry" data-ids="${retry.join(",")}">Retry ${retry.length} missed</button>` : ""}
         <a class="btn ghost" href="#/quiz">New quiz</a>
@@ -1059,16 +1119,16 @@
 
   const tabRow = (t, i, n) => `<div class="tabrow">
       <span class="grow"><b>${esc(t.label)}</b>${t.locked ? ' <small class="muted">always shown</small>' : ""}</span>
-      <button class="mini" data-act="ui-tab-up" data-id="${t.id}" title="Move earlier"${i === 0 ? " disabled" : ""}>↑</button>
-      <button class="mini" data-act="ui-tab-down" data-id="${t.id}" title="Move later"${i === n - 1 ? " disabled" : ""}>↓</button>
-      ${t.locked ? "" : `<button class="mini" data-act="ui-tab-hide" data-id="${t.id}" title="Hide this tab">✕</button>`}
+      <button class="mini" data-act="ui-tab-up" data-id="${t.id}" title="Move earlier" aria-label="Move ${esc(t.label)} earlier"${i === 0 ? " disabled" : ""}>↑</button>
+      <button class="mini" data-act="ui-tab-down" data-id="${t.id}" title="Move later" aria-label="Move ${esc(t.label)} later"${i === n - 1 ? " disabled" : ""}>↓</button>
+      ${t.locked ? "" : `<button class="mini" data-act="ui-tab-hide" data-id="${t.id}" title="Hide this tab" aria-label="Hide ${esc(t.label)}">✕</button>`}
     </div>`;
 
   const widgetRow = (w, i, n) => `<div class="tabrow">
       <span class="grow"><b>${esc(w.label)}</b>${w.locked ? ' <small class="muted">always shown</small>' : ""}</span>
-      <button class="mini" data-act="ui-widget-up" data-id="${w.id}" title="Move up"${i === 0 ? " disabled" : ""}>↑</button>
-      <button class="mini" data-act="ui-widget-down" data-id="${w.id}" title="Move down"${i === n - 1 ? " disabled" : ""}>↓</button>
-      ${w.locked ? "" : `<button class="mini" data-act="ui-widget-hide" data-id="${w.id}" title="Hide this widget">✕</button>`}
+      <button class="mini" data-act="ui-widget-up" data-id="${w.id}" title="Move up" aria-label="Move ${esc(w.label)} up"${i === 0 ? " disabled" : ""}>↑</button>
+      <button class="mini" data-act="ui-widget-down" data-id="${w.id}" title="Move down" aria-label="Move ${esc(w.label)} down"${i === n - 1 ? " disabled" : ""}>↓</button>
+      ${w.locked ? "" : `<button class="mini" data-act="ui-widget-hide" data-id="${w.id}" title="Hide this widget" aria-label="Hide ${esc(w.label)}">✕</button>`}
     </div>`;
 
   function viewSettings() {
@@ -1558,6 +1618,7 @@
     if (!sess || sess.kind !== "q") return;
     const el = $("#typed");
     if (el) sess.typed[sess.ids[sess.i]] = el.value;
+    persistSess();
   }
 
   document.addEventListener("click", (e) => {
@@ -1735,6 +1796,7 @@
   document.addEventListener("input", (e) => {
     if (e.target.id === "typed" && sess && sess.kind === "q") {
       sess.typed[sess.ids[sess.i]] = e.target.value;
+      persistSess();
     }
   });
 
@@ -1767,6 +1829,7 @@
   if (S.settings.theme) document.documentElement.dataset.theme = S.settings.theme;
   renderNav();
   applyLook();
+  restoreSess();
   const sForm = document.getElementById("search-form");
   if (sForm) sForm.setAttribute("autocomplete", "off");
   window.addEventListener("hashchange", route);

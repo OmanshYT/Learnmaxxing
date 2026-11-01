@@ -18,6 +18,43 @@ Uploads, study progress and layout choices live in the browser, not in Git.
 They are stored under the key `chem-study-hub.v1`; clearing site data wipes
 them, and **Stats → Export** backs up the study progress.
 
+## 2026-11-01 — an exam survives a refresh, and dark mode stops flashing white
+
+Four things a student could actually trip over:
+
+- **A refresh erased a half-finished exam.** The live quiz lived only in memory.
+  It is now mirrored to `sessionStorage["chem-study-hub.session.v1"]` and picked
+  back up on load — same question, same typed answers — and the copy is deleted
+  on Exit, on finishing, and on any page that is not the session, so nothing can
+  come back stale. An attempt whose time ran out while the page was closed opens
+  straight on "Grade your exam".
+- **The timer counted ticks, not time.** It subtracted one second per interval,
+  so a tab left in the background (where browsers throttle timers) handed back
+  minutes that did not exist. The countdown is now derived from a stored
+  `deadline`, so it stays correct after throttling, sleeping or a refresh.
+- **Native controls ignored dark mode.** Select menus, checkboxes and the page
+  scrollbar are drawn by the browser, and without `color-scheme` they stayed
+  white on the dark palettes. `color-scheme: light` / `dark` now follows the same
+  theme the page does, whether that comes from the ◐ button or the OS, plus a
+  `<meta name="color-scheme">` for the first paint.
+- **Smaller corrections:** `#app` no longer has `aria-live`, so a screen reader
+  stops re-reading the whole page after every answer; a skip link and a focus
+  move to the new page let keyboard navigation start at the content; the results
+  table is wrapped so five columns scroll instead of overflowing a phone; the
+  arrows in Look & layout have labels; `prefers-reduced-motion` turns
+  transitions off; the page gained a favicon, a description and a theme colour
+  so the tab and phone chrome match.
+
+Verified with a throwaway jsdom harness outside the repo (28 checks): all 12
+routes paint without errors; an exam saves, its typed answer returns after a
+simulated refresh, an expired deadline switches to grading, a practice session
+restores, Exit clears the saved copy, and a clean tab has none. The palette
+contrast audit still passes 24/24. Not checked: how the native dark controls and
+focus ring actually look — there is no browser here.
+
+To undo: `git revert` this commit. The in-memory session, tick-based timer and
+`aria-live` region come back with it.
+
 ## 2026-11-01 — every palette paints its own dark page
 
 Picking Ocean, Forest, Sunset, Plum or Slate in dark mode left the area around

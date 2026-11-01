@@ -135,3 +135,23 @@ decision instead of a bug.
     always recoverable, but the screen will jump.
 43. **Private/incognito windows** may refuse IndexedDB, so uploads fail with a
     storage message while the rest of the site still works.
+
+### Refresh, timing and native controls
+
+Added with the 2026-11-01 quality pass; each of these needs a real browser.
+
+44. **Refresh mid-exam** — write an answer, press F5: same question, the answer
+    still in the box, timer still counting down from where it was.
+45. **Background a timed exam** — switch tabs for two minutes, then come back:
+    the timer should have lost about two minutes, not about two seconds.
+46. **Time runs out while away** — hide the tab until the exam time is over: it
+    should open on "Grade your exam", not on a dead question.
+47. **Exit, then refresh** — leaving a quiz and reloading `#/quiz` must not bring
+    the old attempt back.
+48. **Dark mode native bits** — open a select menu ("How many" on the Quiz
+    page), the schedule checkboxes and the page scrollbar: all should be dark,
+    not white.
+49. **Skip link** — Tab once from the address bar: "Skip to content" appears;
+    Enter should land in the page body, not on the top bar.
+50. **Reduced motion** — turn that OS setting on: the toast and the card flips
+    should stop animating.
