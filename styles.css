@@ -360,23 +360,44 @@ textarea:focus, select:focus, input:focus { outline: 2px solid var(--accent); ou
 .hm.l3 { background: color-mix(in srgb, var(--accent) 72%, var(--surface-2)); }
 .hm.l4 { background: var(--accent); }
 
-/* ---------- colour palettes ---------- */
+/* ---------- colour palettes ----------
+   One palette sets the accent, the page, the cards and the lines together, in
+   both modes. Every dark rule restates --bg and --surface: the light rules below
+   also set --bg, and they come later in the file than the plain dark defaults, so
+   a dark rule that stayed silent about the page left the light --bg in place and
+   painted light text onto a white sheet. If you add a palette, give it all four
+   values in both modes or it will do the same. */
 :root[data-palette="ocean"] { --accent: #0e7490; --accent-ink: #fff; --bg: #eaf5f8; --surface-2: #e2f1f6; --line: #cfe2e9; }
 :root[data-palette="forest"] { --accent: #16794f; --accent-ink: #fff; --bg: #edf6f0; --surface-2: #e4f1e8; --line: #d0e4d7; }
 :root[data-palette="sunset"] { --accent: #c2410c; --accent-ink: #fff; --bg: #fdf2ea; --surface-2: #fbeadf; --line: #f0d8c8; }
 :root[data-palette="plum"] { --accent: #7e22ce; --accent-ink: #fff; --bg: #f7effc; --surface-2: #f1e6fa; --line: #e4d3f2; }
 :root[data-palette="slate"] { --accent: #334155; --accent-ink: #fff; --bg: #eef1f5; --surface-2: #e6eaf0; --line: #d6dce6; }
-:root[data-palette="ocean"][data-theme="dark"] { --accent: #38bdf8; --accent-ink: #04121a; --surface-2: #12303a; --line: #21454f; }
-:root[data-palette="forest"][data-theme="dark"] { --accent: #4ade80; --accent-ink: #04160c; --surface-2: #123226; --line: #1f4a37; }
-:root[data-palette="sunset"][data-theme="dark"] { --accent: #fb923c; --accent-ink: #1a0c04; --surface-2: #3a2318; --line: #56331f; }
-:root[data-palette="plum"][data-theme="dark"] { --accent: #c084fc; --accent-ink: #14061f; --surface-2: #2c1a45; --line: #432a63; }
-:root[data-palette="slate"][data-theme="dark"] { --accent: #94a3b8; --accent-ink: #0b1220; --surface-2: #1e2637; --line: #303c52; }
+:root[data-palette="ocean"][data-theme="dark"] { --accent: #38bdf8; --accent-ink: #04121a; --bg: #05161d; --surface: #0b2531; --surface-2: #123340; --line: #1d4652; }
+:root[data-palette="forest"][data-theme="dark"] { --accent: #4ade80; --accent-ink: #04160c; --bg: #05170f; --surface: #0b2a1c; --surface-2: #123a29; --line: #1f4a37; }
+:root[data-palette="sunset"][data-theme="dark"] { --accent: #fb923c; --accent-ink: #1a0c04; --bg: #170d07; --surface: #2a1810; --surface-2: #3a2318; --line: #56331f; }
+:root[data-palette="plum"][data-theme="dark"] { --accent: #c084fc; --accent-ink: #14061f; --bg: #120819; --surface: #221233; --surface-2: #2c1a45; --line: #432a63; }
+:root[data-palette="slate"][data-theme="dark"] { --accent: #94a3b8; --accent-ink: #0b1220; --bg: #0a1017; --surface: #151d2b; --surface-2: #1e2637; --line: #303c52; }
 @media (prefers-color-scheme: dark) {
-  :root[data-palette="ocean"]:not([data-theme="light"]) { --accent: #38bdf8; --accent-ink: #04121a; --surface-2: #12303a; --line: #21454f; }
-  :root[data-palette="forest"]:not([data-theme="light"]) { --accent: #4ade80; --accent-ink: #04160c; --surface-2: #123226; --line: #1f4a37; }
-  :root[data-palette="sunset"]:not([data-theme="light"]) { --accent: #fb923c; --accent-ink: #1a0c04; --surface-2: #3a2318; --line: #56331f; }
-  :root[data-palette="plum"]:not([data-theme="light"]) { --accent: #c084fc; --accent-ink: #14061f; --surface-2: #2c1a45; --line: #432a63; }
-  :root[data-palette="slate"]:not([data-theme="light"]) { --accent: #94a3b8; --accent-ink: #0b1220; --surface-2: #1e2637; --line: #303c52; }
+  :root[data-palette="ocean"]:not([data-theme="light"]) { --accent: #38bdf8; --accent-ink: #04121a; --bg: #05161d; --surface: #0b2531; --surface-2: #123340; --line: #1d4652; }
+  :root[data-palette="forest"]:not([data-theme="light"]) { --accent: #4ade80; --accent-ink: #04160c; --bg: #05170f; --surface: #0b2a1c; --surface-2: #123a29; --line: #1f4a37; }
+  :root[data-palette="sunset"]:not([data-theme="light"]) { --accent: #fb923c; --accent-ink: #1a0c04; --bg: #170d07; --surface: #2a1810; --surface-2: #3a2318; --line: #56331f; }
+  :root[data-palette="plum"]:not([data-theme="light"]) { --accent: #c084fc; --accent-ink: #14061f; --bg: #120819; --surface: #221233; --surface-2: #2c1a45; --line: #432a63; }
+  :root[data-palette="slate"]:not([data-theme="light"]) { --accent: #94a3b8; --accent-ink: #0b1220; --bg: #0a1017; --surface: #151d2b; --surface-2: #1e2637; --line: #303c52; }
+}
+
+/* Ambient glow, dark mode only: the page behind the cards is a soft tint of the
+   palette's own accent rather than one flat colour, so the white surround never
+   comes back whichever palette is picked. Screen only — printing keeps white. */
+:root {
+  --glow:
+    radial-gradient(1100px 620px at 78% -12%, color-mix(in srgb, var(--accent) 26%, transparent), transparent 62%),
+    radial-gradient(900px 540px at 2% 108%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 66%);
+}
+@media screen {
+  :root[data-theme="dark"] body { background-image: var(--glow); background-attachment: fixed; }
+}
+@media screen and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) body { background-image: var(--glow); background-attachment: fixed; }
 }
 
 /* ---------- look & layout ---------- */

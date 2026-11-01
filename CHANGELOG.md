@@ -18,6 +18,27 @@ Uploads, study progress and layout choices live in the browser, not in Git.
 They are stored under the key `chem-study-hub.v1`; clearing site data wipes
 them, and **Stats → Export** backs up the study progress.
 
+## 2026-11-01 — every palette paints its own dark page
+
+Picking Ocean, Forest, Sunset, Plum or Slate in dark mode left the area around
+the cards a near-white sheet with light text sitting on it: the headings were
+unreadable. The palettes' dark rules set the accent, the card colour and the
+lines but never the page, and the light palette rules above them had already set
+`--bg`, so the light value won the cascade.
+
+Each dark palette now states `--bg`, `--surface`, `--surface-2` and `--line`
+itself, and the page carries a soft glow of that palette's accent behind the
+cards instead of one flat colour (the look the owner asked for). The glow is
+`@media screen` only, so printing keeps its white page.
+
+Checked with a throwaway cascade script outside the project (jsdom, real
+selector matching and specificity, run against `git show HEAD:styles.css` and
+the new file): before, 10 of 24 palette/mode states had text-on-page contrast
+near 1.05; after, all 24 pass, between 13.7 and 16.5. There is no browser here,
+so how the glow reads on screen is unseen.
+
+To undo: `git revert` this commit — the flat page colours come back with it.
+
 ## 2026-11-01 — sample PDF no longer opens like the course notes
 
 `dev/test-notes.pdf` opened with the heading “CHEM 159 — Unit 4 notes”, so the
