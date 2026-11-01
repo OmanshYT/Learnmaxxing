@@ -117,7 +117,9 @@ def rule(ops, y):
 
 def page_one():
     ops, y = [], TOP
-    y = paragraph(ops, y, [("CHEM 159 \u2014 Unit 4 notes", True)], size=18, leading=22)
+    # No dash or colon in the heading: "Term — definition" on one line is exactly
+    # what the reader turns into a glossary entry, and a heading is not a term.
+    y = paragraph(ops, y, [("Upload test handout", True)], size=18, leading=22)
     y -= 18
     y = paragraph(
         ops,

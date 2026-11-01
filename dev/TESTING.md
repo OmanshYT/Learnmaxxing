@@ -8,7 +8,9 @@ A running list of checks that need a real browser. Ask for it and it comes back 
 worksheet first. Rebuild it with `python3 dev/make-test-pdf.py`.
 
 Upload it and you should get **5 terms** — Enthalpy, Entropy, Gibbs free energy, Catalyst, Le Chatelier's
-principle — then 9 cards and 11 questions. Four lines are wrong on purpose, and each one should be dropped
+principle — then 9 cards and 11 questions. The file's first line is “Upload test handout”, so if the Study tab
+opens with that line and the title above it is `test-notes`, the right upload opened: an upload only ever shows
+its own text, never the built-in course notes. Four lines are wrong on purpose, and each one should be dropped
 rather than guessed at:
 
 - `Mole — mol`: the definition is under twelve characters.

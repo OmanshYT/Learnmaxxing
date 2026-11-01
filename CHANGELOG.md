@@ -18,6 +18,20 @@ Uploads, study progress and layout choices live in the browser, not in Git.
 They are stored under the key `chem-study-hub.v1`; clearing site data wipes
 them, and **Stats → Export** backs up the study progress.
 
+## 2026-11-01 — sample PDF no longer opens like the course notes
+
+`dev/test-notes.pdf` opened with the heading “CHEM 159 — Unit 4 notes”, so the
+Study tab of that upload began with a line that reads like the built-in course
+notes and it was easy to think the wrong file had opened. It now opens “Upload
+test handout”. Nothing else in the file changed: same five terms, same four
+deliberate misses.
+
+The new heading deliberately has no dash or colon: a “Term — definition” line is
+exactly what the reader turns into a glossary entry, and a heading is not a term.
+
+To undo: `git revert` this commit, then upload the previous PDF again if you want
+it back in the library.
+
 ## 2026-11-01 — sample PDF for testing uploads
 
 `dev/test-notes.pdf` is a two-page chemistry handout to upload instead of hunting
