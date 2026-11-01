@@ -211,3 +211,15 @@ Added with the 2026-11-01 follow-up pass; all of these need a real browser.
     appear under the answer, and again in “Worth another look” for a miss. On
     notes with units, a number question's blank should swallow “kJ/mol” whole
     instead of leaving “/mol” behind.
+
+### Headings and a damaged save (from the deep jsdom pass, 2026-11-01)
+
+65. **Screen-reader headings** — with a screen reader, open a practice quiz, an
+    exam and a flashcard deck: each should announce a page title (“Practice: …”,
+    “Exam: Exam”, “Flashcards: Ch 1 …”) before the counter. Nothing should look
+    different on screen. VoiceOver: rotor → Headings should list it first.
+66. **A damaged save recovers** — in the browser console, set
+    `localStorage.setItem("chem-study-hub.v1", JSON.stringify({q:null,ui:null,settings:null,cards:null,log:null}))`
+    and reload: the site should open on the home screen with empty progress, not
+    go blank. Then open a part page, the stats page and a quiz: all should work,
+    and new progress should save normally from there.

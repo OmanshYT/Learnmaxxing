@@ -16,6 +16,15 @@
   } catch (e) {
     /* storage blocked or corrupt: start fresh */
   }
+  /* An older build, or a save written while storage was failing, can leave
+     nulls where objects and arrays belong. `{...defaults, ...saved}` copies
+     those nulls straight over the defaults, and every view then reads through
+     them (S.q[id], S.settings.theme). Coerce once, here, so no view has to
+     guard each property. */
+  ["q", "cards", "sched", "settings"].forEach((k) => {
+    if (!S[k] || typeof S[k] !== "object" || Array.isArray(S[k])) S[k] = {};
+  });
+  if (!Array.isArray(S.log)) S.log = [];
   const HUB = window.HubUI || null;
   if (HUB) S.ui = HUB.normalize(S.ui);
   function save() {
@@ -665,7 +674,7 @@
     }
   }
 
-  const qProgress = () => `<div class="sess-top">
+  const qProgress = () => `<h1 class="sr-only">${sess.exam ? "Exam" : "Practice"}: ${esc(sess.title)}</h1><div class="sess-top">
       <span class="muted">${esc(sess.title)} · ${sess.i + 1} / ${sess.ids.length}</span>
       ${sess.exam ? `<span class="timer" id="timer">${fmtTime(Math.max(0, sess.left))}</span>` : ""}
       <button class="link" data-act="exit">Exit</button>
@@ -854,6 +863,7 @@
     }
     const c = CMAP[sess.queue[sess.i]];
     app.innerHTML = `<section class="session">
+      <h1 class="sr-only">Flashcards: ${esc(c.partTitle)}</h1>
       <div class="sess-top"><span class="muted">${sess.i + 1} / ${sess.queue.length} · Ch ${c.ch} · ${esc(c.partTitle)}</span>
         <button class="link" data-act="exit-cards">Exit</button></div>
       ${bar(sess.i / sess.queue.length)}
@@ -882,7 +892,8 @@
   let upBusy = "";
 
   const fmtSize = (n) => (!n ? "" : n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
-  const noLib = () => `<section class="panel"><p class="muted">The upload module did not load. Reload the page and try again.</p></section>`;
+  const noLib = () => `<header class="page-head"><h1>Upload &amp; study</h1></header>
+    <section class="panel"><p class="muted">The upload module did not load. Reload the page and try again.</p></section>`;
 
   function generated(m) {
     let g = genCache.get(m.id);
@@ -1045,7 +1056,8 @@
         if (current.arg === id) paintMaterial(m, tab);
       })
       .catch((e) => {
-        app.innerHTML = `<p class="muted">${esc(e.message || "Could not open that upload.")}</p>`;
+        app.innerHTML = `<header class="page-head"><h1>Your uploads</h1></header>
+          <p class="muted">${esc(e.message || "Could not open that upload.")}</p>`;
       });
   }
 

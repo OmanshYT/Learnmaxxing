@@ -18,6 +18,29 @@ Uploads, study progress and layout choices live in the browser, not in Git.
 They are stored under the key `chem-study-hub.v1`; clearing site data wipes
 them, and **Stats → Export** backs up the study progress.
 
+## 2026-11-01 — every screen has a heading, and a damaged save no longer crashes
+
+Found by a deep jsdom pass (152 checks) that walked every route, every part
+page, every setting and every `data-act` in the app. Two real defects, both
+fixed here; the rest of the run was clean.
+
+- **In-session screens had no top-level heading.** Practice, exam and flashcard
+  screens open with a counter and a card but no `<h1>`, and the upload error
+  state had none either, so a screen reader found no page title there. Each now
+  starts with a `sr-only` heading — “Practice: Due today”, “Exam: Exam”,
+  “Flashcards: Ch 1 …”, “Your uploads” — which is invisible to sighted users
+  and does not change the layout.
+- **A save with `null` fields crashed the whole app.** `{ ...defaults, ...saved }`
+  copied `q: null` or `settings: null` over the defaults, and then `S.q[id]` in a
+  part page or `S.settings.theme` at boot threw: the site went blank for anyone
+  whose save was half-written or came from an older build. The loader now
+  coerces `q`, `cards`, `sched` and `settings` to objects and `log` to an array,
+  once, before anything reads them.
+
+To undo: `git revert` this commit. Both changes are additive guards — no saved
+data, layout model or visual design moves, and removing them only restores the
+old behaviour (no hidden headings, null saves crashing).
+
 ## 2026-11-01 — backups that include the uploads, a fairer quiz, and a site you can install
 
 Five follow-ups from the review list. Everything is still client-side: no build
