@@ -365,6 +365,16 @@
     : '<span class="badge">New</span>';
 
   /* ---------- views ---------- */
+  /* Generated schedule tasks arrive as `<a href="#/part/1.4">1.4 Atomic Mass</a>
+     (20 min)`. The home list must not escape that (the markup printed as text)
+     and must not inject it whole either, or the link would sit inside another
+     link. Take the parts out and rebuild them: link text, then the rest. */
+  function schedBits(task) {
+    const strip = (x) => String(x || "").replace(/<[^>]*>/g, "");
+    const m = String(task || "").match(/^\s*<a\b[^>]*>([\s\S]*?)<\/a>([\s\S]*)$/i);
+    return m ? { label: strip(m[1]), rest: strip(m[2]) } : { label: strip(task), rest: "" };
+  }
+
   function viewHome() {
     const today = todayIso();
     const days = daysUntil(D.course.exam);
@@ -432,7 +442,13 @@
         return `<section class="panel">
           <h2>Next up</h2>
           <ul class="plain">${next
-            .map((s) => `<li><b>${fmtDate(s.date)}</b> — ${s.href ? `<a href="${esc(s.href)}">${esc(s.task)}</a>` : esc(s.task)}</li>`)
+            .map((s) => {
+              const bits = schedBits(s.task);
+              const label = s.href
+                ? `<a href="${esc(s.href)}">${esc(bits.label)}</a>${esc(bits.rest)}`
+                : `${esc(bits.label)}${esc(bits.rest)}`;
+              return `<li><b>${fmtDate(s.date)}</b> — ${label}</li>`;
+            })
             .join("")}</ul>
           <a class="btn ghost" href="#/schedule">Open schedule</a>
         </section>`;

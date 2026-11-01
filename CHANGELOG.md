@@ -18,6 +18,19 @@ Uploads, study progress and layout choices live in the browser, not in Git.
 They are stored under the key `chem-study-hub.v1`; clearing site data wipes
 them, and **Stats → Export** backs up the study progress.
 
+## 2026-11-01 — “Next up” stops printing its own links
+
+The home dashboard's schedule window read
+`<a href="#/part/1.4">1.4 Atomic Mass and the Mole</a> (20 min)` — literally.
+Generated schedule tasks in `data.js` are already HTML (the Schedule page
+injects them as such), but the home widget escaped the whole string, so the
+markup showed as text. It now takes the task apart (`schedBits`), escapes the
+words, and rebuilds one real link plus the plain “(20 min)” tail — no nested
+anchors and no raw HTML leaking through.
+
+To undo: `git revert` this commit. The Schedule page, the “today” panel and
+`data.js` are untouched, so nothing else changes back.
+
 ## 2026-11-01 — tabs you can actually drop, a page you can edit, and a text size
 
 Four things the owner asked for after using the site:

@@ -178,3 +178,7 @@ Added with the 2026-11-01 layout pass.
     100%. Check a quiz question and the settings page, not just the home screen.
 56. **Spacing** — windows and panels should have a clear gap on every page
     (home, chapters, part notes, stats), and on a phone-width window too.
+57. **“Next up” on the dashboard** should read “Oct 31 — 1.4 Atomic Mass and the
+    Mole (20 min) (+10 min: missed questions)” with only the title clickable and
+    no `<a href=…>` showing. Check a day with no part attached too: the task
+    should be plain text, not a link.
