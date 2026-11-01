@@ -18,6 +18,19 @@ Uploads, study progress and layout choices live in the browser, not in Git.
 They are stored under the key `chem-study-hub.v1`; clearing site data wipes
 them, and **Stats → Export** backs up the study progress.
 
+## 2026-10-31 — tough spots checklist
+
+`dev/TESTING.md` grows a second section listing the places the code behaves in a
+defensible but surprising way, in the order they are likely to be noticed: bold
+terms need their definition on the same line, one bold word switches off the
+dash fallback, PDFs carry no bold at all, the quiz needs four terms and cuts
+definitions at 130 characters, tab dragging is not a touch gesture, dark mode
+follows the OS until ◐ is pressed, and a large dashboard photo can fill
+localStorage so progress stops saving.
+
+Documentation only, nothing in the site changed. Revert by deleting the
+“Tough spots” section from `dev/TESTING.md`.
+
 ## 2026-10-31 — AGENTS.md working notes
 
 New file `AGENTS.md`: what the project is, how to run it, the file map, the
